@@ -391,8 +391,10 @@ struct gs_texture_2d : gs_texture {
 	ComPtr<ID3D12Resource> texture;
 	ComPtr<ID3D12DescriptorHeap> textureDescriptorHeap;
 	ComPtr<ID3D12Resource> renderTarget[6];
+	D3D12_CPU_DESCRIPTOR_HANDLE renderTargetCpuDescHandle[6];
 	ComPtr<ID3D12DescriptorHeap> renderTargetDescriptorHeap[6];
 	ComPtr<ID3D12Resource> renderTargetLinear[6];
+	D3D12_CPU_DESCRIPTOR_HANDLE renderTargetLinearCpuDescHandle[6];
 	ComPtr<IDXGISurface1> gdiSurface;
 
 	uint32_t width = 0, height = 0;
@@ -476,6 +478,29 @@ struct gs_texture_3d : gs_texture {
 		      uint32_t levels, const uint8_t *const *data, uint32_t flags);
 
 	gs_texture_3d(gs_device_t *device, uint32_t handle);
+};
+
+struct gs_zstencil_buffer : gs_obj {
+	ComPtr<ID3D12Resource> texture;
+
+	uint32_t width, height;
+	gs_zstencil_format format;
+	DXGI_FORMAT dxgiFormat;
+
+	D3D12_RESOURCE_DESC td = {};
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsvd = {};
+	D3D12_CLEAR_VALUE clearValue;
+	D3D12_HEAP_PROPERTIES headProp = {};
+	
+	void InitBuffer();
+
+	inline void Release()
+	{
+	}
+
+	inline gs_zstencil_buffer() : width(0), height(0), dxgiFormat(DXGI_FORMAT_UNKNOWN) {}
+
+	gs_zstencil_buffer(gs_device_t* device, uint32_t width, uint32_t height, gs_zstencil_format format);
 };
 
 struct gs_stage_surface : gs_obj {
@@ -615,6 +640,38 @@ struct gs_pixel_shader : gs_shader {
 	gs_pixel_shader(gs_device_t *device, const char *file, const char *shaderString);
 };
 
+struct gs_swap_chain : gs_obj {
+	HWND hwnd;
+	gs_init_data initData;
+	DXGI_SWAP_CHAIN_DESC1 swapDesc = {};
+	gs_color_space space;
+
+	gs_texture_2d target;
+	gs_zstencil_buffer zs;
+	ComPtr<IDXGISwapChain1> swap;
+	ComPtr<ID3D12CommandQueue> commandQueue;
+	HANDLE hWaitable = NULL;
+
+	void InitTarget(uint32_t cx, uint32_t cy);
+	void InitZStencilBuffer(uint32_t cx, uint32_t cy);
+	void Resize(uint32_t cx, uint32_t cy, gs_color_format format);
+	void Init();
+
+	inline void Release()
+	{
+		target.Release();
+		zs.Release();
+		if (hWaitable) {
+			CloseHandle(hWaitable);
+			hWaitable = NULL;
+		}
+		swap.Clear();
+	}
+
+	gs_swap_chain(gs_device* device, const gs_init_data* data);
+	virtual ~gs_swap_chain();
+};
+
 
 struct gs_pipeline_state {
 	ID3D12PipelineState* pipeline_state;
@@ -682,6 +739,18 @@ struct gs_index_buffer : gs_obj {
 	gs_index_buffer(gs_device_t *device, enum gs_index_type type, void *indices, size_t num, uint32_t flags);
 };
 
+struct gs_monitor_color_info {
+	bool hdr;
+	UINT bits_per_color;
+	ULONG sdr_white_nits;
+
+	gs_monitor_color_info(bool hdr, int bits_per_color, ULONG sdr_white_nits)
+		: hdr(hdr),
+		bits_per_color(bits_per_color),
+		sdr_white_nits(sdr_white_nits)
+	{
+	}
+};
 
 struct gs_device {
 	ComPtr<IDXGIFactory6> factory;
@@ -689,19 +758,32 @@ struct gs_device {
 	ComPtr<IDXGIAdapter> adapter;
 	ComPtr<ID3D12GraphicsCommandList> context;
 	uint32_t adpIdx = 0;
+	bool nv12Supported = false;
+	bool p010Supported = false;
+	bool fastClearSupported = false;
 
+	gs_texture_2d* curRenderTarget = nullptr;
+	gs_zstencil_buffer* curZStencilBuffer = nullptr;
+	int curRenderSide = 0;
 	enum gs_color_space curColorSpace = GS_CS_SRGB;
+	bool curFramebufferSrgb = false;
+	bool curFramebufferInvalidate = false;
+	gs_texture* curTextures[GS_MAX_TEXTURES];
+	gs_sampler_state* curSamplers[GS_MAX_TEXTURES];
+	gs_vertex_buffer* curVertexBuffer = nullptr;
+	gs_index_buffer* curIndexBuffer = nullptr;
+	gs_vertex_shader* curVertexShader = nullptr;
+	gs_pixel_shader* curPixelShader = nullptr;
+	gs_swap_chain* curSwapChain = nullptr;
 
-	gs_rect viewport;
-	gs_obj *first_obj = nullptr;
-	//gs_texture *curTextures[GS_MAX_TEXTURES];
-	//gs_sampler_state *curSamplers[GS_MAX_TEXTURES];
-	matrix4 curProjMatrix;
-	matrix4 curViewMatrix;
-	matrix4 curViewProjMatrix;
+	gs_vertex_buffer* lastVertexBuffer = nullptr;
+	gs_vertex_shader* lastVertexShader = nullptr;
 
-	gs_vertex_shader *lastVertexShader = nullptr;
-	gs_vertex_buffer *lastVertexBuffer = nullptr;
+	bool zstencilStateChanged = true;
+	bool rasterStateChanged = true;
+	bool blendStateChanged = true;
+
+	std::vector<std::pair<HMONITOR, gs_monitor_color_info>> monitor_to_hdr;
 
 	void InitFactory();
 	void InitAdapter(uint32_t adapterIdx);
@@ -716,6 +798,8 @@ struct gs_device {
 	void UpdateViewProjMatrix();
 
 	void FlushOutputViews();
+
+	gs_monitor_color_info GetMonitorColorInfo(HMONITOR hMonitor);
 
 	gs_device(uint32_t adapterIdx);
 	~gs_device();

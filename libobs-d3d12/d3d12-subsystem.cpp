@@ -58,7 +58,6 @@ gs_obj::~gs_obj()
 }
 
 
-
 struct HagsStatus {
 	enum DriverSupport { ALWAYS_OFF, ALWAYS_ON, EXPERIMENTAL, STABLE, UNKNOWN };
 
@@ -175,6 +174,214 @@ static std::optional<HagsStatus> GetAdapterHagsStatus(const DXGI_ADAPTER_DESC *d
 	return ret;
 }
 
+static enum gs_color_space get_next_space(gs_device_t* device, HWND hwnd, DXGI_SWAP_EFFECT effect)
+{
+	enum gs_color_space next_space = GS_CS_SRGB;
+	if (effect == DXGI_SWAP_EFFECT_FLIP_DISCARD) {
+		const HMONITOR hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+		if (hMonitor) {
+			const gs_monitor_color_info info = device->GetMonitorColorInfo(hMonitor);
+			if (info.hdr)
+				next_space = GS_CS_709_SCRGB;
+			else if (info.bits_per_color > 8)
+				next_space = GS_CS_SRGB_16F;
+		}
+	}
+
+	return next_space;
+}
+
+static enum gs_color_format get_swap_format_from_space(gs_color_space space, gs_color_format sdr_format)
+{
+	gs_color_format format = sdr_format;
+	switch (space) {
+	case GS_CS_SRGB_16F:
+	case GS_CS_709_SCRGB:
+		format = GS_RGBA16F;
+	}
+
+	return format;
+}
+
+static inline enum gs_color_space make_swap_desc(gs_device* device, DXGI_SWAP_CHAIN_DESC1& desc,
+	const gs_init_data* data, DXGI_SWAP_EFFECT effect, UINT flags)
+{
+	const HWND hwnd = (HWND)data->window.hwnd;
+	const enum gs_color_space space = get_next_space(device, hwnd, effect);
+	const gs_color_format format = get_swap_format_from_space(space, data->format);
+
+	memset(&desc, 0, sizeof(desc));
+	desc.Width = data->cx;
+	desc.Height = data->cy;
+	desc.Format = ConvertGSTextureFormatView(format);
+	desc.SampleDesc.Count = 1;
+	desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+	desc.BufferCount = data->num_backbuffers;
+	desc.SwapEffect = effect;
+	desc.Flags = flags;
+
+	return space;
+}
+
+void gs_swap_chain::InitTarget(uint32_t cx, uint32_t cy)
+{
+	HRESULT hr;
+
+	target.width = cx;
+	target.height = cy;
+
+	hr = swap->GetBuffer(0, __uuidof(ID3D12Resource), (void**)target.texture.Assign());
+	if (FAILED(hr))
+		throw HRError("Failed to get swap buffer texture", hr);
+
+	D3D12_RENDER_TARGET_VIEW_DESC rtv;
+	rtv.Format = target.dxgiFormatView;
+	rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+	rtv.Texture2D.MipSlice = 0;
+	device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetCpuDescHandle[0]);
+	if (target.dxgiFormatView == target.dxgiFormatViewLinear) {
+		target.renderTargetLinear[0] = target.renderTarget[0];
+	}
+	else {
+		rtv.Format = target.dxgiFormatViewLinear;
+		device->device->CreateRenderTargetView(target.texture, &rtv,
+			target.renderTargetLinearCpuDescHandle[0]);
+	}
+}
+
+void gs_swap_chain::InitZStencilBuffer(uint32_t cx, uint32_t cy)
+{
+	zs.width = cx;
+	zs.height = cy;
+
+	if (zs.format != GS_ZS_NONE && cx != 0 && cy != 0) {
+		zs.InitBuffer();
+	}
+	else {
+		zs.texture.Clear();
+		// zs.view.Clear();
+	}
+}
+
+void gs_swap_chain::Resize(uint32_t cx, uint32_t cy, gs_color_format format)
+{
+	RECT clientRect;
+	HRESULT hr;
+
+	target.texture.Clear();
+	target.renderTarget[0].Clear();
+	target.renderTargetLinear[0].Clear();
+	zs.texture.Clear();
+	// zs.view.Clear();
+
+	initData.cx = cx;
+	initData.cy = cy;
+
+	if (cx == 0 || cy == 0) {
+		GetClientRect(hwnd, &clientRect);
+		if (cx == 0)
+			cx = clientRect.right;
+		if (cy == 0)
+			cy = clientRect.bottom;
+	}
+
+	const DXGI_FORMAT dxgi_format = ConvertGSTextureFormatView(format);
+	hr = swap->ResizeBuffers(swapDesc.BufferCount, cx, cy, dxgi_format, swapDesc.Flags);
+	if (FAILED(hr))
+		throw HRError("Failed to resize swap buffers", hr);
+	ComQIPtr<IDXGISwapChain3> swap3 = swap;
+	if (swap3) {
+		const DXGI_COLOR_SPACE_TYPE dxgi_space = (format == GS_RGBA16F)
+			? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+			: DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+		hr = swap3->SetColorSpace1(dxgi_space);
+		if (FAILED(hr))
+			throw HRError("Failed to set color space", hr);
+	}
+
+	target.dxgiFormatResource = ConvertGSTextureFormatResource(format);
+	target.dxgiFormatView = dxgi_format;
+	target.dxgiFormatViewLinear = ConvertGSTextureFormatViewLinear(format);
+	InitTarget(cx, cy);
+	InitZStencilBuffer(cx, cy);
+}
+
+void gs_swap_chain::Init()
+{
+	const gs_color_format format =
+		get_swap_format_from_space(get_next_space(device, hwnd, swapDesc.SwapEffect), initData.format);
+
+	target.device = device;
+	target.isRenderTarget = true;
+	target.format = initData.format;
+	target.dxgiFormatResource = ConvertGSTextureFormatResource(format);
+	target.dxgiFormatView = ConvertGSTextureFormatView(format);
+	target.dxgiFormatViewLinear = ConvertGSTextureFormatViewLinear(format);
+	InitTarget(initData.cx, initData.cy);
+
+	zs.device = device;
+	zs.format = initData.zsformat;
+	zs.dxgiFormat = ConvertGSZStencilFormat(initData.zsformat);
+	InitZStencilBuffer(initData.cx, initData.cy);
+}
+
+gs_swap_chain::gs_swap_chain(gs_device* device, const gs_init_data* data)
+	: gs_obj(device, gs_type::gs_swap_chain),
+	hwnd((HWND)data->window.hwnd),
+	initData(*data),
+	space(GS_CS_SRGB)
+{
+	DXGI_SWAP_EFFECT effect = DXGI_SWAP_EFFECT_DISCARD;
+	UINT flags = 0;
+
+	ComQIPtr<IDXGIFactory5> factory5 = device->factory;
+	if (factory5) {
+		initData.num_backbuffers = max(data->num_backbuffers, 2);
+
+		effect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+		flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+	}
+
+	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+
+	HRESULT hr = device->device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue));
+	if (FAILED(hr))
+		throw HRError("Failed to create command queue", hr);
+
+	space = make_swap_desc(device, swapDesc, &initData, effect, flags);
+        hr =  device->factory->CreateSwapChainForHwnd(
+		commandQueue.Get(),        // Swap chain needs the queue so that it can force a flush on it.
+		(HWND)initData.window.hwnd,
+		&swapDesc,
+		nullptr,
+		nullptr,
+		swap.Assign()
+	);
+	if (FAILED(hr))
+		throw HRError("Failed to create swap chain", hr);
+
+	/* Ignore Alt+Enter */
+	device->factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
+
+	if (flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) {
+		ComPtr<IDXGISwapChain2> swap2 = ComQIPtr<IDXGISwapChain2>(swap);
+		hWaitable = swap2->GetFrameLatencyWaitableObject();
+		if (hWaitable == NULL) {
+			throw HRError("Failed to GetFrameLatencyWaitableObject", hr);
+		}
+	}
+
+	Init();
+}
+
+gs_swap_chain::~gs_swap_chain()
+{
+	if (hWaitable)
+		CloseHandle(hWaitable);
+}
+
 
 void gs_device::InitFactory() {
 	HRESULT hr = CreateDXGIFactory2(0, IID_PPV_ARGS(&factory));
@@ -228,6 +435,178 @@ void gs_device::UpdateViewProjMatrix() {}
 
 void gs_device::FlushOutputViews() {}
 
+
+// Returns true if this is an integrated display panel e.g. the screen attached to tablets or laptops.
+static bool IsInternalVideoOutput(const DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY VideoOutputTechnologyType)
+{
+	switch (VideoOutputTechnologyType) {
+	case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL:
+	case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED:
+	case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED:
+		return TRUE;
+
+	default:
+		return FALSE;
+	}
+}
+
+// Note: Since an hmon can represent multiple monitors while in clone, this function as written will return
+//  the value for the internal monitor if one exists, and otherwise the highest clone-path priority.
+static HRESULT GetPathInfo(_In_ PCWSTR pszDeviceName, _Out_ DISPLAYCONFIG_PATH_INFO* pPathInfo)
+{
+	HRESULT hr = S_OK;
+	UINT32 NumPathArrayElements = 0;
+	UINT32 NumModeInfoArrayElements = 0;
+	DISPLAYCONFIG_PATH_INFO* PathInfoArray = nullptr;
+	DISPLAYCONFIG_MODE_INFO* ModeInfoArray = nullptr;
+
+	do {
+		// In case this isn't the first time through the loop, delete the buffers allocated
+		delete[] PathInfoArray;
+		PathInfoArray = nullptr;
+
+		delete[] ModeInfoArray;
+		ModeInfoArray = nullptr;
+
+		hr = HRESULT_FROM_WIN32(GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &NumPathArrayElements,
+			&NumModeInfoArrayElements));
+		if (FAILED(hr)) {
+			break;
+		}
+
+		PathInfoArray = new (std::nothrow) DISPLAYCONFIG_PATH_INFO[NumPathArrayElements];
+		if (PathInfoArray == nullptr) {
+			hr = E_OUTOFMEMORY;
+			break;
+		}
+
+		ModeInfoArray = new (std::nothrow) DISPLAYCONFIG_MODE_INFO[NumModeInfoArrayElements];
+		if (ModeInfoArray == nullptr) {
+			hr = E_OUTOFMEMORY;
+			break;
+		}
+
+		hr = HRESULT_FROM_WIN32(QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &NumPathArrayElements, PathInfoArray,
+			&NumModeInfoArrayElements, ModeInfoArray, nullptr));
+	} while (hr == HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER));
+
+	INT DesiredPathIdx = -1;
+
+	if (SUCCEEDED(hr)) {
+		// Loop through all sources until the one which matches the 'monitor' is found.
+		for (UINT PathIdx = 0; PathIdx < NumPathArrayElements; ++PathIdx) {
+			DISPLAYCONFIG_SOURCE_DEVICE_NAME SourceName = {};
+			SourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+			SourceName.header.size = sizeof(SourceName);
+			SourceName.header.adapterId = PathInfoArray[PathIdx].sourceInfo.adapterId;
+			SourceName.header.id = PathInfoArray[PathIdx].sourceInfo.id;
+
+			hr = HRESULT_FROM_WIN32(DisplayConfigGetDeviceInfo(&SourceName.header));
+			if (SUCCEEDED(hr)) {
+				if (wcscmp(pszDeviceName, SourceName.viewGdiDeviceName) == 0) {
+					// Found the source which matches this hmonitor. The paths are given in path-priority order
+					// so the first found is the most desired, unless we later find an internal.
+					if (DesiredPathIdx == -1 ||
+						IsInternalVideoOutput(PathInfoArray[PathIdx].targetInfo.outputTechnology)) {
+						DesiredPathIdx = PathIdx;
+					}
+				}
+			}
+		}
+	}
+
+	if (DesiredPathIdx != -1) {
+		*pPathInfo = PathInfoArray[DesiredPathIdx];
+	}
+	else {
+		hr = E_INVALIDARG;
+	}
+
+	delete[] PathInfoArray;
+	PathInfoArray = nullptr;
+
+	delete[] ModeInfoArray;
+	ModeInfoArray = nullptr;
+
+	return hr;
+}
+
+// Overloaded function accepts an HMONITOR and converts to DeviceName
+static HRESULT GetPathInfo(HMONITOR hMonitor, _Out_ DISPLAYCONFIG_PATH_INFO* pPathInfo)
+{
+	HRESULT hr = S_OK;
+
+	// Get the name of the 'monitor' being requested
+	MONITORINFOEXW ViewInfo;
+	RtlZeroMemory(&ViewInfo, sizeof(ViewInfo));
+	ViewInfo.cbSize = sizeof(ViewInfo);
+	if (!GetMonitorInfoW(hMonitor, &ViewInfo)) {
+		// Error condition, likely invalid monitor handle, could log error
+		hr = HRESULT_FROM_WIN32(GetLastError());
+	}
+
+	if (SUCCEEDED(hr)) {
+		hr = GetPathInfo(ViewInfo.szDevice, pPathInfo);
+	}
+
+	return hr;
+}
+
+static ULONG GetSdrMaxNits(HMONITOR monitor)
+{
+	ULONG nits = 80;
+
+	DISPLAYCONFIG_PATH_INFO info;
+	if (SUCCEEDED(GetPathInfo(monitor, &info))) {
+		const DISPLAYCONFIG_PATH_TARGET_INFO& targetInfo = info.targetInfo;
+
+		DISPLAYCONFIG_SDR_WHITE_LEVEL level;
+		DISPLAYCONFIG_DEVICE_INFO_HEADER& header = level.header;
+		header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+		header.size = sizeof(level);
+		header.adapterId = targetInfo.adapterId;
+		header.id = targetInfo.id;
+		if (DisplayConfigGetDeviceInfo(&header) == ERROR_SUCCESS)
+			nits = (level.SDRWhiteLevel * 80) / 1000;
+	}
+
+	return nits;
+}
+
+gs_monitor_color_info gs_device::GetMonitorColorInfo(HMONITOR hMonitor)
+{
+	IDXGIFactory1* factory1 = factory;
+	if (!factory1->IsCurrent()) {
+		InitFactory();
+		factory1 = factory;
+		monitor_to_hdr.clear();
+	}
+
+	for (const std::pair<HMONITOR, gs_monitor_color_info>& pair : monitor_to_hdr) {
+		if (pair.first == hMonitor)
+			return pair.second;
+	}
+
+	ComPtr<IDXGIAdapter> adapter;
+	ComPtr<IDXGIOutput> output;
+	ComPtr<IDXGIOutput6> output6;
+	for (UINT adapterIndex = 0; SUCCEEDED(factory1->EnumAdapters(adapterIndex, &adapter)); ++adapterIndex) {
+		for (UINT outputIndex = 0; SUCCEEDED(adapter->EnumOutputs(outputIndex, &output)); ++outputIndex) {
+			DXGI_OUTPUT_DESC1 desc1;
+			if (SUCCEEDED(output->QueryInterface(&output6)) && SUCCEEDED(output6->GetDesc1(&desc1)) &&
+				(desc1.Monitor == hMonitor)) {
+				const bool hdr = desc1.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+				const UINT bits = desc1.BitsPerColor;
+				const ULONG nits = GetSdrMaxNits(desc1.Monitor);
+				return monitor_to_hdr.emplace_back(hMonitor, gs_monitor_color_info(hdr, bits, nits))
+					.second;
+			}
+		}
+	}
+
+	return gs_monitor_color_info(false, 8, 80);
+}
+
 gs_device::gs_device(uint32_t adapterIdx) {
 	matrix4_identity(&curProjMatrix);
 	matrix4_identity(&curViewMatrix);
@@ -255,7 +634,7 @@ const char *device_get_name(void)
 
 int device_get_type(void)
 {
-	return 0;
+	return GS_DEVICE_DIRECT3D_12;
 }
 
 const char *device_preprocessor_name(void)
@@ -316,141 +695,6 @@ static bool GetOutputDesc1(IDXGIOutput *const output, DXGI_OUTPUT_DESC1 *desc1)
 	return success;
 }
 
-// Returns true if this is an integrated display panel e.g. the screen attached to tablets or laptops.
-static bool IsInternalVideoOutput(const DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY VideoOutputTechnologyType)
-{
-	switch (VideoOutputTechnologyType) {
-	case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL:
-	case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED:
-	case DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED:
-		return TRUE;
-
-	default:
-		return FALSE;
-	}
-}
-
-// Note: Since an hmon can represent multiple monitors while in clone, this function as written will return
-//  the value for the internal monitor if one exists, and otherwise the highest clone-path priority.
-static HRESULT GetPathInfo(_In_ PCWSTR pszDeviceName, _Out_ DISPLAYCONFIG_PATH_INFO *pPathInfo)
-{
-	HRESULT hr = S_OK;
-	UINT32 NumPathArrayElements = 0;
-	UINT32 NumModeInfoArrayElements = 0;
-	DISPLAYCONFIG_PATH_INFO *PathInfoArray = nullptr;
-	DISPLAYCONFIG_MODE_INFO *ModeInfoArray = nullptr;
-
-	do {
-		// In case this isn't the first time through the loop, delete the buffers allocated
-		delete[] PathInfoArray;
-		PathInfoArray = nullptr;
-
-		delete[] ModeInfoArray;
-		ModeInfoArray = nullptr;
-
-		hr = HRESULT_FROM_WIN32(GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &NumPathArrayElements,
-								    &NumModeInfoArrayElements));
-		if (FAILED(hr)) {
-			break;
-		}
-
-		PathInfoArray = new (std::nothrow) DISPLAYCONFIG_PATH_INFO[NumPathArrayElements];
-		if (PathInfoArray == nullptr) {
-			hr = E_OUTOFMEMORY;
-			break;
-		}
-
-		ModeInfoArray = new (std::nothrow) DISPLAYCONFIG_MODE_INFO[NumModeInfoArrayElements];
-		if (ModeInfoArray == nullptr) {
-			hr = E_OUTOFMEMORY;
-			break;
-		}
-
-		hr = HRESULT_FROM_WIN32(QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &NumPathArrayElements, PathInfoArray,
-							   &NumModeInfoArrayElements, ModeInfoArray, nullptr));
-	} while (hr == HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER));
-
-	INT DesiredPathIdx = -1;
-
-	if (SUCCEEDED(hr)) {
-		// Loop through all sources until the one which matches the 'monitor' is found.
-		for (UINT PathIdx = 0; PathIdx < NumPathArrayElements; ++PathIdx) {
-			DISPLAYCONFIG_SOURCE_DEVICE_NAME SourceName = {};
-			SourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
-			SourceName.header.size = sizeof(SourceName);
-			SourceName.header.adapterId = PathInfoArray[PathIdx].sourceInfo.adapterId;
-			SourceName.header.id = PathInfoArray[PathIdx].sourceInfo.id;
-
-			hr = HRESULT_FROM_WIN32(DisplayConfigGetDeviceInfo(&SourceName.header));
-			if (SUCCEEDED(hr)) {
-				if (wcscmp(pszDeviceName, SourceName.viewGdiDeviceName) == 0) {
-					// Found the source which matches this hmonitor. The paths are given in path-priority order
-					// so the first found is the most desired, unless we later find an internal.
-					if (DesiredPathIdx == -1 ||
-					    IsInternalVideoOutput(PathInfoArray[PathIdx].targetInfo.outputTechnology)) {
-						DesiredPathIdx = PathIdx;
-					}
-				}
-			}
-		}
-	}
-
-	if (DesiredPathIdx != -1) {
-		*pPathInfo = PathInfoArray[DesiredPathIdx];
-	} else {
-		hr = E_INVALIDARG;
-	}
-
-	delete[] PathInfoArray;
-	PathInfoArray = nullptr;
-
-	delete[] ModeInfoArray;
-	ModeInfoArray = nullptr;
-
-	return hr;
-}
-
-// Overloaded function accepts an HMONITOR and converts to DeviceName
-static HRESULT GetPathInfo(HMONITOR hMonitor, _Out_ DISPLAYCONFIG_PATH_INFO *pPathInfo)
-{
-	HRESULT hr = S_OK;
-
-	// Get the name of the 'monitor' being requested
-	MONITORINFOEXW ViewInfo;
-	RtlZeroMemory(&ViewInfo, sizeof(ViewInfo));
-	ViewInfo.cbSize = sizeof(ViewInfo);
-	if (!GetMonitorInfoW(hMonitor, &ViewInfo)) {
-		// Error condition, likely invalid monitor handle, could log error
-		hr = HRESULT_FROM_WIN32(GetLastError());
-	}
-
-	if (SUCCEEDED(hr)) {
-		hr = GetPathInfo(ViewInfo.szDevice, pPathInfo);
-	}
-
-	return hr;
-}
-
-static ULONG GetSdrMaxNits(HMONITOR monitor)
-{
-	ULONG nits = 80;
-
-	DISPLAYCONFIG_PATH_INFO info;
-	if (SUCCEEDED(GetPathInfo(monitor, &info))) {
-		const DISPLAYCONFIG_PATH_TARGET_INFO &targetInfo = info.targetInfo;
-
-		DISPLAYCONFIG_SDR_WHITE_LEVEL level;
-		DISPLAYCONFIG_DEVICE_INFO_HEADER &header = level.header;
-		header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
-		header.size = sizeof(level);
-		header.adapterId = targetInfo.adapterId;
-		header.id = targetInfo.id;
-		if (DisplayConfigGetDeviceInfo(&header) == ERROR_SUCCESS)
-			nits = (level.SDRWhiteLevel * 80) / 1000;
-	}
-
-	return nits;
-}
 
 static void PopulateMonitorIds(HMONITOR handle, char *id, char *alt_id, size_t capacity)
 {
@@ -689,7 +933,9 @@ int device_create(gs_device_t **p_device, uint32_t adapter)
 	return errorcode;
 }
 
-void device_destroy(gs_device_t *device) {}
+void device_destroy(gs_device_t *device) {
+	delete device;
+}
 
 void device_enter_context(gs_device_t *device)
 {
@@ -705,47 +951,105 @@ void device_leave_context(gs_device_t *device)
 
 void *device_get_device_obj(gs_device_t *device)
 {
-	return (void *)device;
+	return (void*)device->device.Get();
 }
 
 gs_swapchain_t *device_swapchain_create(gs_device_t *device, const struct gs_init_data *data)
 {
-	/* not implement */
-	return nullptr;
+	gs_swap_chain* swap = NULL;
+
+	try {
+		swap = new gs_swap_chain(device, data);
+	}
+	catch (const HRError& error) {
+		blog(LOG_ERROR, "device_swapchain_create (D3D12): %s (%08lX)", error.str, error.hr);
+		LogD3D12ErrorDetails(error, device);
+	}
+
+	return swap;
 }
 
-void device_resize(gs_device_t *device, uint32_t cx, uint32_t cy)
+static void device_resize_internal(gs_device_t* device, uint32_t cx, uint32_t cy, gs_color_space space)
 {
-	/* not implement */
+	try {
+		const gs_color_format format = get_swap_format_from_space(space, device->curSwapChain->initData.format);
+
+		device->context->OMSetRenderTargets(0, NULL, false, NULL);
+		device->curSwapChain->Resize(cx, cy, format);
+		device->curSwapChain->space = space;
+		device->curFramebufferInvalidate = true;
+	}
+	catch (const HRError& error) {
+		blog(LOG_ERROR, "device_resize_internal (D3D12): %s (%08lX)", error.str, error.hr);
+		LogD3D12ErrorDetails(error, device);
+	}
 }
 
-enum gs_color_space device_get_color_space(gs_device_t *device)
+void device_resize(gs_device_t* device, uint32_t cx, uint32_t cy)
 {
-	/* not implement */
-	return gs_color_space::GS_CS_SRGB;
+	if (!device->curSwapChain) {
+		blog(LOG_WARNING, "device_resize (D3D12): No active swap");
+		return;
+	}
+
+	const enum gs_color_space next_space =
+		get_next_space(device, device->curSwapChain->hwnd, device->curSwapChain->swapDesc.SwapEffect);
+	device_resize_internal(device, cx, cy, next_space);
 }
 
-void device_update_color_space(gs_device_t *device)
+enum gs_color_space device_get_color_space(gs_device_t* device)
 {
-	/* not implement */
+	return device->curColorSpace;
 }
 
-void device_get_size(const gs_device_t *device, uint32_t *cx, uint32_t *cy)
+void device_update_color_space(gs_device_t* device)
 {
-	/* not implement */
+	if (device->curSwapChain) {
+		const enum gs_color_space next_space =
+			get_next_space(device, device->curSwapChain->hwnd, device->curSwapChain->swapDesc.SwapEffect);
+		if (device->curSwapChain->space != next_space)
+			device_resize_internal(device, 0, 0, next_space);
+	}
+	else {
+		blog(LOG_WARNING, "device_update_color_space (D3D12): No active swap");
+	}
 }
 
-uint32_t device_get_width(const gs_device_t *device)
+void device_get_size(const gs_device_t* device, uint32_t* cx, uint32_t* cy)
 {
-	/* not implement */
-	return 0;
+	if (device->curSwapChain) {
+		*cx = device->curSwapChain->target.width;
+		*cy = device->curSwapChain->target.height;
+	}
+	else {
+		blog(LOG_ERROR, "device_get_size (D3D12): no active swap");
+		*cx = 0;
+		*cy = 0;
+	}
 }
 
-uint32_t device_get_height(const gs_device_t *device)
+uint32_t device_get_width(const gs_device_t* device)
 {
-	/* not implement */
-	return 0;
+	if (device->curSwapChain) {
+		return device->curSwapChain->target.width;
+	}
+	else {
+		blog(LOG_ERROR, "device_get_size (D3D12): no active swap");
+		return 0;
+	}
 }
+
+uint32_t device_get_height(const gs_device_t* device)
+{
+	if (device->curSwapChain) {
+		return device->curSwapChain->target.height;
+	}
+	else {
+		blog(LOG_ERROR, "device_get_size (D3D12): no active swap");
+		return 0;
+	}
+}
+
 gs_texture_t* device_texture_create(gs_device_t* device, uint32_t width, uint32_t height,
 	enum gs_color_format color_format, uint32_t levels, const uint8_t** data,
 	uint32_t flags)
@@ -756,11 +1060,11 @@ gs_texture_t* device_texture_create(gs_device_t* device, uint32_t width, uint32_
 			false);
 	}
 	catch (const HRError& error) {
-		blog(LOG_ERROR, "device_texture_create (D3D11): %s (%08lX)", error.str, error.hr);
+		blog(LOG_ERROR, "device_texture_create (D3D12): %s (%08lX)", error.str, error.hr);
 		LogD3D12ErrorDetails(error, device);
 	}
 	catch (const char* error) {
-		blog(LOG_ERROR, "device_texture_create (D3D11): %s", error);
+		blog(LOG_ERROR, "device_texture_create (D3D12): %s", error);
 	}
 
 	return texture;
@@ -776,13 +1080,13 @@ gs_texture_t* device_cubetexture_create(gs_device_t* device, uint32_t size, enum
 	}
 	catch (const HRError& error) {
 		blog(LOG_ERROR,
-			"device_cubetexture_create (D3D11): %s "
+			"device_cubetexture_create (D3D12): %s "
 			"(%08lX)",
 			error.str, error.hr);
 		LogD3D12ErrorDetails(error, device);
 	}
 	catch (const char* error) {
-		blog(LOG_ERROR, "device_cubetexture_create (D3D11): %s", error);
+		blog(LOG_ERROR, "device_cubetexture_create (D3D12): %s", error);
 	}
 
 	return texture;
@@ -797,11 +1101,11 @@ gs_texture_t* device_voltexture_create(gs_device_t* device, uint32_t width, uint
 		texture = new gs_texture_3d(device, width, height, depth, color_format, levels, data, flags);
 	}
 	catch (const HRError& error) {
-		blog(LOG_ERROR, "device_voltexture_create (D3D11): %s (%08lX)", error.str, error.hr);
+		blog(LOG_ERROR, "device_voltexture_create (D3D12): %s (%08lX)", error.str, error.hr);
 		LogD3D12ErrorDetails(error, device);
 	}
 	catch (const char* error) {
-		blog(LOG_ERROR, "device_voltexture_create (D3D11): %s", error);
+		blog(LOG_ERROR, "device_voltexture_create (D3D12): %s", error);
 	}
 
 	return texture;
@@ -811,19 +1115,49 @@ gs_zstencil_t* device_zstencil_create(gs_device_t* device, uint32_t width, uint3
 	enum gs_zstencil_format format)
 {
 	gs_zstencil_buffer* zstencil = NULL;
+	try {
+		zstencil = new gs_zstencil_buffer(device, width, height, format);
+	}
+	catch (const HRError& error) {
+		blog(LOG_ERROR, "device_zstencil_create (D3D12): %s (%08lX)", error.str, error.hr);
+		LogD3D12ErrorDetails(error, device);
+	}
+
 	return zstencil;
 }
 gs_stagesurf_t *device_stagesurface_create(gs_device_t *device, uint32_t width, uint32_t height,
 					   enum gs_color_format color_format)
 {
-	/* not implement */
-	return nullptr;
+	gs_stage_surface* surf = NULL;
+	try {
+		surf = new gs_stage_surface(device, width, height, color_format);
+	}
+	catch (const HRError& error) {
+		blog(LOG_ERROR,
+			"device_stagesurface_create (D3D12): %s "
+			"(%08lX)",
+			error.str, error.hr);
+		LogD3D12ErrorDetails(error, device);
+	}
+
+	return surf;
 }
 
 gs_samplerstate_t *device_samplerstate_create(gs_device_t *device, const struct gs_sampler_info *info)
 {
-	/* not implement */
-	return nullptr;
+	gs_sampler_state* ss = NULL;
+	try {
+		ss = new gs_sampler_state(device, info);
+	}
+	catch (const HRError& error) {
+		blog(LOG_ERROR,
+			"device_samplerstate_create (D3D12): %s "
+			"(%08lX)",
+			error.str, error.hr);
+		LogD3D12ErrorDetails(error, device);
+	}
+
+	return ss;
 }
 
 gs_shader_t *device_vertexshader_create(gs_device_t *device, const char *shader_string, const char *file,
@@ -850,7 +1184,7 @@ gs_shader_t *device_vertexshader_create(gs_device_t *device, const char *shader_
 		     file, buf);
 
 	} catch (const char *error) {
-		blog(LOG_ERROR, "device_vertexshader_create (D3D11): %s", error);
+		blog(LOG_ERROR, "device_vertexshader_create (D3D12): %s", error);
 	}
 
 	return shader;
@@ -893,12 +1227,12 @@ gs_vertbuffer_t *device_vertexbuffer_create(gs_device_t *device, struct gs_vb_da
 		buffer = new gs_vertex_buffer(device, data, flags);
 	} catch (const HRError &error) {
 		blog(LOG_ERROR,
-		     "device_vertexbuffer_create (D3D11): %s "
+		     "device_vertexbuffer_create (D3D12): %s "
 		     "(%08lX)",
 		     error.str, error.hr);
 		LogD3D12ErrorDetails(error, device);
 	} catch (const char *error) {
-		blog(LOG_ERROR, "device_vertexbuffer_create (D3D11): %s", error);
+		blog(LOG_ERROR, "device_vertexbuffer_create (D3D12): %s", error);
 	}
 
 	return buffer;
@@ -920,55 +1254,161 @@ gs_indexbuffer_t *device_indexbuffer_create(gs_device_t *device, enum gs_index_t
 
 gs_timer_t *device_timer_create(gs_device_t *device)
 {
-	/* not implement */
 	return nullptr;
 }
 
 gs_timer_range_t *device_timer_range_create(gs_device_t *device)
 {
-	/* not implement */
 	return nullptr;
 }
 
 enum gs_texture_type device_get_texture_type(const gs_texture_t *texture)
 {
-	/* not implement */
-	return gs_texture_type::GS_TEXTURE_2D;
+	return texture->type;
 }
 
 void device_load_vertexbuffer(gs_device_t *device, gs_vertbuffer_t *vertbuffer)
 {
-	/* not implement */
+	if (device->curVertexBuffer == vertbuffer)
+		return;
+
+	device->curVertexBuffer = vertbuffer;
 }
 
 void device_load_indexbuffer(gs_device_t *device, gs_indexbuffer_t *indexbuffer)
 {
-	/* not implement */
+	if (device->curIndexBuffer == indexbuffer)
+		return;
+	DXGI_FORMAT format;
+	if (indexbuffer) {
+		switch (indexbuffer->indexSize) {
+		case 2:
+			format = DXGI_FORMAT_R16_UINT;
+			break;
+		default:
+		case 4:
+			format = DXGI_FORMAT_R32_UINT;
+			break;
+		}
+	}
+	else {
+		format = DXGI_FORMAT_R32_UINT;
+	}
+
+	device->curIndexBuffer = indexbuffer;
+}
+
+static void device_load_texture_internal(gs_device_t* device, gs_texture_t* tex, int unit,
+	ID3D11ShaderResourceView* view)
+{
+	if (device->curTextures[unit] == tex)
+		return;
+
+	device->curTextures[unit] = tex;
+	device->context->PSSetShaderResources(unit, 1, &view);
 }
 
 void device_load_texture(gs_device_t *device, gs_texture_t *tex, int unit)
 {
-	/* not implement */
+	ID3D11ShaderResourceView* view;
+	if (tex)
+		view = tex->shaderRes;
+	else
+		view = NULL;
+	return device_load_texture_internal(device, tex, unit, view);
 }
 
 void device_load_texture_srgb(gs_device_t *device, gs_texture_t *tex, int unit)
 {
-	/* not implement */
+	ID3D11ShaderResourceView* view;
+	if (tex)
+		view = tex->shaderResLinear;
+	else
+		view = NULL;
+	return device_load_texture_internal(device, tex, unit, view);
 }
 
 void device_load_samplerstate(gs_device_t *device, gs_samplerstate_t *samplerstate, int unit)
 {
-	/* not implement */
+	ID3D11SamplerState* state = NULL;
+
+	if (device->curSamplers[unit] == samplerstate)
+		return;
+
+	if (samplerstate)
+		state = samplerstate->state;
+
+	device->curSamplers[unit] = samplerstate;
+	device->context->PSSetSamplers(unit, 1, &state);
 }
 
 void device_load_vertexshader(gs_device_t *device, gs_shader_t *vertshader)
 {
-	/* not implement */
+	ID3D11VertexShader* shader = NULL;
+	ID3D11InputLayout* layout = NULL;
+	ID3D11Buffer* constants = NULL;
+
+	if (device->curVertexShader == vertshader)
+		return;
+
+	gs_vertex_shader* vs = static_cast<gs_vertex_shader*>(vertshader);
+
+	if (vertshader) {
+		if (vertshader->type != GS_SHADER_VERTEX) {
+			blog(LOG_ERROR, "device_load_vertexshader (D3D11): "
+				"Specified shader is not a vertex "
+				"shader");
+			return;
+		}
+
+		shader = vs->shader;
+		layout = vs->layout;
+		constants = vs->constants;
+	}
+
+	device->curVertexShader = vs;
+	device->context->VSSetShader(shader, NULL, 0);
+	device->context->IASetInputLayout(layout);
+	device->context->VSSetConstantBuffers(0, 1, &constants);
 }
 
 void device_load_pixelshader(gs_device_t *device, gs_shader_t *pixelshader)
 {
-	/* not implement */
+	ID3D11PixelShader* shader = NULL;
+	ID3D11Buffer* constants = NULL;
+	ID3D11SamplerState* states[GS_MAX_TEXTURES];
+
+	if (device->curPixelShader == pixelshader)
+		return;
+
+	gs_pixel_shader* ps = static_cast<gs_pixel_shader*>(pixelshader);
+
+	if (pixelshader) {
+		if (pixelshader->type != GS_SHADER_PIXEL) {
+			blog(LOG_ERROR, "device_load_pixelshader (D3D11): "
+				"Specified shader is not a pixel "
+				"shader");
+			return;
+		}
+
+		shader = ps->shader;
+		constants = ps->constants;
+		ps->GetSamplerStates(states);
+	}
+	else {
+		memset(states, 0, sizeof(states));
+	}
+
+	clear_textures(device);
+
+	device->curPixelShader = ps;
+	device->context->PSSetShader(shader, NULL, 0);
+	device->context->PSSetConstantBuffers(0, 1, &constants);
+	device->context->PSSetSamplers(0, GS_MAX_TEXTURES, states);
+
+	for (int i = 0; i < GS_MAX_TEXTURES; i++)
+		if (device->curSamplers[i] && device->curSamplers[i]->state != states[i])
+			device->curSamplers[i] = nullptr;
 }
 
 void device_load_default_samplerstate(gs_device_t *device, bool b_3d, int unit)

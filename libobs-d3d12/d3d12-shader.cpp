@@ -129,8 +129,8 @@ void gs_shader::BuildConstantBuffer()
 
 		/* checks to see if this constant needs to start at a new
 		 * register */
-		if (size && (constantSize & 15) != 0) {
-			size_t alignMax = (constantSize + 15) & ~15;
+		if (size && (constantSize & 255) != 0) {
+			size_t alignMax = (constantSize + 255) & ~255;
 
 			if ((size + constantSize) > alignMax)
 				constantSize = alignMax;
@@ -140,6 +140,18 @@ void gs_shader::BuildConstantBuffer()
 		constantSize += size;
 	}
 
+	if (constantSize) {
+		//HRESULT hr;
+
+		//bd.ByteWidth = (constantSize + 255) & (~255); /* align */
+		//bd.Usage = D3D11_USAGE_DYNAMIC;
+		//bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		//bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+		//hr = device->device->CreateBuffer(&bd, NULL, constants.Assign());
+		//if (FAILED(hr))
+		//	throw HRError("Failed to create constant buffer", hr);
+	}
 
 	for (size_t i = 0; i < params.size(); i++)
 		gs_shader_set_default(&params[i]);

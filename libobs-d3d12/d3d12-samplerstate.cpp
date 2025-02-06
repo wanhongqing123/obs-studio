@@ -67,9 +67,4 @@ static inline D3D12_FILTER ConvertGSFilter(gs_sample_filter filter)
 gs_sampler_state::gs_sampler_state(gs_device_t *device, const gs_sampler_info *info)
 	: gs_obj(device, gs_type::gs_sampler_state),
 	  info(*info)
-{
-	HRESULT hr;
-	vec4 v4;
-
-	vec4_from_rgba(&v4, info->border_color);
-}
+{}

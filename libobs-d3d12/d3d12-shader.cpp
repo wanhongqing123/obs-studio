@@ -129,8 +129,8 @@ void gs_shader::BuildConstantBuffer()
 
 		/* checks to see if this constant needs to start at a new
 		 * register */
-		if (size && (constantSize & 255) != 0) {
-			size_t alignMax = (constantSize + 255) & ~255;
+		if (size && (constantSize & 15) != 0) {
+			size_t alignMax = (constantSize + 15) & ~15;
 
 			if ((size + constantSize) > alignMax)
 				constantSize = alignMax;
@@ -138,19 +138,6 @@ void gs_shader::BuildConstantBuffer()
 
 		param.pos = constantSize;
 		constantSize += size;
-	}
-
-	if (constantSize) {
-		//HRESULT hr;
-
-		//bd.ByteWidth = (constantSize + 255) & (~255); /* align */
-		//bd.Usage = D3D11_USAGE_DYNAMIC;
-		//bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-		//bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-		//hr = device->device->CreateBuffer(&bd, NULL, constants.Assign());
-		//if (FAILED(hr))
-		//	throw HRError("Failed to create constant buffer", hr);
 	}
 
 	for (size_t i = 0; i < params.size(); i++)
@@ -292,9 +279,7 @@ inline void gs_shader::UpdateParam(std::vector<uint8_t> &constData, gs_shader_pa
 			device_load_texture(device, shader_tex.tex, param.textureID);
 
 		if (param.nextSampler) {
-			// ID3D11SamplerState *state = param.nextSampler->state;
-			// device->context->PSSetSamplers(param.textureID, 1, &state);
-			// param.nextSampler = nullptr;
+			param.nextSampler = nullptr;
 		}
 	}
 }

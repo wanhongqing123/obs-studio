@@ -15,7 +15,8 @@ target_sources(libobs-d3d12 PRIVATE
     d3d12-texture2d.cpp
     d3d12-texture3d.cpp
     d3d12-vertexbuffer.cpp
-    d3d12-zstencilbuffer.cpp)
+    d3d12-zstencilbuffer.cpp
+    d3d12-pipelinestate.cpp)
 
 configure_file(cmake/windows/obs-module.rc.in libobs-d3d12.rc)
 target_sources(libobs-d3d12 PRIVATE libobs-d3d12.rc)

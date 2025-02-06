@@ -746,37 +746,73 @@ uint32_t device_get_height(const gs_device_t *device)
 	/* not implement */
 	return 0;
 }
-
-gs_texture_t *device_texture_create(gs_device_t *device, uint32_t width, uint32_t height,
-				    enum gs_color_format color_format, uint32_t levels, const uint8_t **data,
-				    uint32_t flags)
+gs_texture_t* device_texture_create(gs_device_t* device, uint32_t width, uint32_t height,
+	enum gs_color_format color_format, uint32_t levels, const uint8_t** data,
+	uint32_t flags)
 {
-	/* not implement */
-	return nullptr;
+	gs_texture* texture = NULL;
+	try {
+		texture = new gs_texture_2d(device, width, height, color_format, levels, data, flags, GS_TEXTURE_2D,
+			false);
+	}
+	catch (const HRError& error) {
+		blog(LOG_ERROR, "device_texture_create (D3D11): %s (%08lX)", error.str, error.hr);
+		LogD3D12ErrorDetails(error, device);
+	}
+	catch (const char* error) {
+		blog(LOG_ERROR, "device_texture_create (D3D11): %s", error);
+	}
+
+	return texture;
 }
 
-gs_texture_t *device_cubetexture_create(gs_device_t *device, uint32_t size, enum gs_color_format color_format,
-					uint32_t levels, const uint8_t **data, uint32_t flags)
+gs_texture_t* device_cubetexture_create(gs_device_t* device, uint32_t size, enum gs_color_format color_format,
+	uint32_t levels, const uint8_t** data, uint32_t flags)
 {
-	/* not implement */
-	return nullptr;
+	gs_texture* texture = NULL;
+	try {
+		texture = new gs_texture_2d(device, size, size, color_format, levels, data, flags, GS_TEXTURE_CUBE,
+			false);
+	}
+	catch (const HRError& error) {
+		blog(LOG_ERROR,
+			"device_cubetexture_create (D3D11): %s "
+			"(%08lX)",
+			error.str, error.hr);
+		LogD3D12ErrorDetails(error, device);
+	}
+	catch (const char* error) {
+		blog(LOG_ERROR, "device_cubetexture_create (D3D11): %s", error);
+	}
+
+	return texture;
 }
 
-gs_texture_t *device_voltexture_create(gs_device_t *device, uint32_t width, uint32_t height, uint32_t depth,
-				       enum gs_color_format color_format, uint32_t levels, const uint8_t *const *data,
-				       uint32_t flags)
+gs_texture_t* device_voltexture_create(gs_device_t* device, uint32_t width, uint32_t height, uint32_t depth,
+	enum gs_color_format color_format, uint32_t levels, const uint8_t* const* data,
+	uint32_t flags)
 {
-	/* not implement */
-	return nullptr;
+	gs_texture* texture = NULL;
+	try {
+		texture = new gs_texture_3d(device, width, height, depth, color_format, levels, data, flags);
+	}
+	catch (const HRError& error) {
+		blog(LOG_ERROR, "device_voltexture_create (D3D11): %s (%08lX)", error.str, error.hr);
+		LogD3D12ErrorDetails(error, device);
+	}
+	catch (const char* error) {
+		blog(LOG_ERROR, "device_voltexture_create (D3D11): %s", error);
+	}
+
+	return texture;
 }
 
-gs_zstencil_t *device_zstencil_create(gs_device_t *device, uint32_t width, uint32_t height,
-				      enum gs_zstencil_format format)
+gs_zstencil_t* device_zstencil_create(gs_device_t* device, uint32_t width, uint32_t height,
+	enum gs_zstencil_format format)
 {
-	/* not implement */
-	return nullptr;
+	gs_zstencil_buffer* zstencil = NULL;
+	return zstencil;
 }
-
 gs_stagesurf_t *device_stagesurface_create(gs_device_t *device, uint32_t width, uint32_t height,
 					   enum gs_color_format color_format)
 {
@@ -1160,15 +1196,31 @@ enum gs_color_format gs_texture_get_color_format(const gs_texture_t *tex)
 	return GS_BGRA;
 }
 
-bool gs_texture_map(gs_texture_t *tex, uint8_t **ptr, uint32_t *linesize)
+bool gs_texture_map(gs_texture_t* tex, uint8_t** ptr, uint32_t* linesize)
 {
-	/* not implement */
-	return false;
+	HRESULT hr;
+
+	if (tex->type != GS_TEXTURE_2D)
+		return false;
+
+	gs_texture_2d* tex2d = static_cast<gs_texture_2d*>(tex);
+
+	D3D12_RANGE map;
+	hr = tex2d->upload->Map(0, &map, (void**)ptr);
+
+	if (FAILED(hr))
+		return false;
+
+	*linesize = (map.End - map.Begin) / tex2d->height;
+	return true;
 }
 
-void gs_texture_unmap(gs_texture_t *tex)
+void gs_texture_unmap(gs_texture_t* tex)
 {
-	/* not implement */
+	if (tex->type != GS_TEXTURE_2D)
+		return;
+
+	gs_texture_2d* tex2d = static_cast<gs_texture_2d*>(tex);
 }
 
 void *gs_texture_get_obj(gs_texture_t *tex)

@@ -358,150 +358,143 @@ struct gs_obj {
 	virtual ~gs_obj();
 };
 
-//struct gs_texture : gs_obj {
-//	gs_texture_type type;
-//	uint32_t levels;
-//	gs_color_format format;
-//
-//	ComPtr<ID3D11ShaderResourceView> shaderRes;
-//	ComPtr<ID3D11ShaderResourceView> shaderResLinear;
-//	D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc{};
-//	D3D11_SHADER_RESOURCE_VIEW_DESC viewDescLinear{};
-//
-//	void Rebuild(ID3D11Device *dev);
-//
-//	inline gs_texture(gs_texture_type type, uint32_t levels, gs_color_format format)
-//		: type(type),
-//		  levels(levels),
-//		  format(format)
-//	{
-//	}
-//
-//	inline gs_texture(gs_device *device, gs_type obj_type, gs_texture_type type)
-//		: gs_obj(device, obj_type),
-//		  type(type)
-//	{
-//	}
-//
-//	inline gs_texture(gs_device *device, gs_type obj_type, gs_texture_type type, uint32_t levels,
-//			  gs_color_format format)
-//		: gs_obj(device, obj_type),
-//		  type(type),
-//		  levels(levels),
-//		  format(format)
-//	{
-//	}
-//};
-//
-//struct gs_texture_2d : gs_texture {
-//	ComPtr<ID3D11Texture2D> texture;
-//	ComPtr<ID3D11RenderTargetView> renderTarget[6];
-//	ComPtr<ID3D11RenderTargetView> renderTargetLinear[6];
-//	ComPtr<IDXGISurface1> gdiSurface;
-//
-//	uint32_t width = 0, height = 0;
-//	uint32_t flags = 0;
-//	DXGI_FORMAT dxgiFormatResource = DXGI_FORMAT_UNKNOWN;
-//	DXGI_FORMAT dxgiFormatView = DXGI_FORMAT_UNKNOWN;
-//	DXGI_FORMAT dxgiFormatViewLinear = DXGI_FORMAT_UNKNOWN;
-//	bool isRenderTarget = false;
-//	bool isGDICompatible = false;
-//	bool isDynamic = false;
-//	bool isShared = false;
-//	bool genMipmaps = false;
-//	uint32_t sharedHandle = GS_INVALID_HANDLE;
-//
-//	gs_texture_2d *pairedTexture = nullptr;
-//	bool twoPlane = false;
-//	bool chroma = false;
-//	bool acquired = false;
-//
-//	vector<vector<uint8_t>> data;
-//	vector<D3D11_SUBRESOURCE_DATA> srd;
-//	D3D11_TEXTURE2D_DESC td = {};
-//
-//	void InitSRD(vector<D3D11_SUBRESOURCE_DATA> &srd);
-//	void InitTexture(const uint8_t *const *data);
-//	void InitResourceView();
-//	void InitRenderTargets();
-//	void BackupTexture(const uint8_t *const *data);
-//	void GetSharedHandle(IDXGIResource *dxgi_res);
-//
-//	void RebuildSharedTextureFallback();
-//	void Rebuild(ID3D11Device *dev);
-//	void RebuildPaired_Y(ID3D11Device *dev);
-//	void RebuildPaired_UV(ID3D11Device *dev);
-//
-//	inline void Release()
-//	{
-//		texture.Release();
-//		for (ComPtr<ID3D11RenderTargetView> &rt : renderTarget)
-//			rt.Release();
-//		for (ComPtr<ID3D11RenderTargetView> &rt : renderTargetLinear)
-//			rt.Release();
-//		gdiSurface.Release();
-//		shaderRes.Release();
-//		shaderResLinear.Release();
-//	}
-//
-//	inline gs_texture_2d() : gs_texture(GS_TEXTURE_2D, 0, GS_UNKNOWN) {}
-//
-//	gs_texture_2d(gs_device_t *device, uint32_t width, uint32_t height, gs_color_format colorFormat,
-//		      uint32_t levels, const uint8_t *const *data, uint32_t flags, gs_texture_type type,
-//		      bool gdiCompatible, bool twoPlane = false);
-//
-//	gs_texture_2d(gs_device_t *device, ID3D11Texture2D *nv12, uint32_t flags);
-//	gs_texture_2d(gs_device_t *device, uint32_t handle, bool ntHandle = false);
-//	gs_texture_2d(gs_device_t *device, ID3D11Texture2D *obj);
-//};
-//
-//struct gs_texture_3d : gs_texture {
-//	ComPtr<ID3D11Texture3D> texture;
-//
-//	uint32_t width = 0, height = 0, depth = 0;
-//	uint32_t flags = 0;
-//	DXGI_FORMAT dxgiFormatResource = DXGI_FORMAT_UNKNOWN;
-//	DXGI_FORMAT dxgiFormatView = DXGI_FORMAT_UNKNOWN;
-//	DXGI_FORMAT dxgiFormatViewLinear = DXGI_FORMAT_UNKNOWN;
-//	bool isDynamic = false;
-//	bool isShared = false;
-//	bool genMipmaps = false;
-//	uint32_t sharedHandle = GS_INVALID_HANDLE;
-//
-//	bool chroma = false;
-//	bool acquired = false;
-//
-//	vector<vector<uint8_t>> data;
-//	vector<D3D11_SUBRESOURCE_DATA> srd;
-//	D3D11_TEXTURE3D_DESC td = {};
-//
-//	void InitSRD(vector<D3D11_SUBRESOURCE_DATA> &srd);
-//	void InitTexture(const uint8_t *const *data);
-//	void InitResourceView();
-//	void BackupTexture(const uint8_t *const *data);
-//	void GetSharedHandle(IDXGIResource *dxgi_res);
-//
-//	void RebuildSharedTextureFallback();
-//	void Rebuild(ID3D11Device *dev);
-//	void RebuildNV12_Y(ID3D11Device *dev);
-//	void RebuildNV12_UV(ID3D11Device *dev);
-//
-//	inline void Release()
-//	{
-//		texture.Release();
-//		shaderRes.Release();
-//	}
-//
-//	inline gs_texture_3d() : gs_texture(GS_TEXTURE_3D, 0, GS_UNKNOWN) {}
-//
-//	gs_texture_3d(gs_device_t *device, uint32_t width, uint32_t height, uint32_t depth, gs_color_format colorFormat,
-//		      uint32_t levels, const uint8_t *const *data, uint32_t flags);
-//
-//	gs_texture_3d(gs_device_t *device, uint32_t handle);
-//};
+struct gs_texture : gs_obj {
+	gs_texture_type type;
+	uint32_t levels;
+	gs_color_format format;
+
+	inline gs_texture(gs_texture_type type, uint32_t levels, gs_color_format format)
+		: type(type),
+		  levels(levels),
+		  format(format)
+	{
+	}
+
+	inline gs_texture(gs_device *device, gs_type obj_type, gs_texture_type type)
+		: gs_obj(device, obj_type),
+		  type(type)
+	{
+	}
+
+	inline gs_texture(gs_device *device, gs_type obj_type, gs_texture_type type, uint32_t levels,
+			  gs_color_format format)
+		: gs_obj(device, obj_type),
+		  type(type),
+		  levels(levels),
+		  format(format)
+	{
+	}
+};
+
+struct gs_texture_2d : gs_texture {
+	ComPtr<ID3D12Resource> upload;
+	ComPtr<ID3D12Resource> texture;
+	ComPtr<ID3D12DescriptorHeap> textureDescriptorHeap;
+	ComPtr<ID3D12Resource> renderTarget[6];
+	ComPtr<ID3D12DescriptorHeap> renderTargetDescriptorHeap[6];
+	ComPtr<ID3D12Resource> renderTargetLinear[6];
+	ComPtr<IDXGISurface1> gdiSurface;
+
+	uint32_t width = 0, height = 0;
+	uint32_t flags = 0;
+	DXGI_FORMAT dxgiFormatResource = DXGI_FORMAT_UNKNOWN;
+	DXGI_FORMAT dxgiFormatView = DXGI_FORMAT_UNKNOWN;
+	DXGI_FORMAT dxgiFormatViewLinear = DXGI_FORMAT_UNKNOWN;
+	bool isRenderTarget = false;
+	bool isGDICompatible = false;
+	bool isDynamic = false;
+	bool isShared = false;
+	bool genMipmaps = false;
+	uint32_t sharedHandle = GS_INVALID_HANDLE;
+
+	gs_texture_2d *pairedTexture = nullptr;
+	bool twoPlane = false;
+	bool chroma = false;
+	bool acquired = false;
+
+	std::vector<std::vector<uint8_t>> data;
+	std::vector<D3D12_SUBRESOURCE_DATA> srd;
+	D3D12_RESOURCE_DESC td;
+	D3D12_HEAP_PROPERTIES heapProp;
+
+	void InitSRD(std::vector<D3D12_SUBRESOURCE_DATA> &srd);
+	void InitTexture(const uint8_t *const *data);
+	void InitResourceView();
+	void InitRenderTargets();
+	void BackupTexture(const uint8_t *const *data);
+	void GetSharedHandle(IDXGIResource *dxgi_res);
+
+
+	inline void Release()
+	{
+	}
+
+	inline gs_texture_2d() : gs_texture(GS_TEXTURE_2D, 0, GS_UNKNOWN) {}
+
+	gs_texture_2d(gs_device_t *device, uint32_t width, uint32_t height, gs_color_format colorFormat,
+		      uint32_t levels, const uint8_t *const *data, uint32_t flags, gs_texture_type type,
+		      bool gdiCompatible, bool twoPlane = false);
+
+	gs_texture_2d(gs_device_t *device, ID3D12Resource*nv12, uint32_t flags);
+	gs_texture_2d(gs_device_t *device, uint32_t handle, bool ntHandle = false);
+	gs_texture_2d(gs_device_t *device, ID3D12Resource*obj);
+};
+
+struct gs_texture_3d : gs_texture {
+	ComPtr<ID3D12Resource> texture;
+	D3D12_RESOURCE_DESC td;
+
+	uint32_t width = 0, height = 0, depth = 0;
+	uint32_t flags = 0;
+	DXGI_FORMAT dxgiFormatResource = DXGI_FORMAT_UNKNOWN;
+	DXGI_FORMAT dxgiFormatView = DXGI_FORMAT_UNKNOWN;
+	DXGI_FORMAT dxgiFormatViewLinear = DXGI_FORMAT_UNKNOWN;
+	bool isDynamic = false;
+	bool isShared = false;
+	bool genMipmaps = false;
+	uint32_t sharedHandle = GS_INVALID_HANDLE;
+
+	bool chroma = false;
+	bool acquired = false;
+
+	std::vector<std::vector<uint8_t>> data;
+	std::vector<D3D12_SUBRESOURCE_DATA> srd;
+
+	void InitSRD(std::vector<D3D12_SUBRESOURCE_DATA> &srd);
+	void InitTexture(const uint8_t *const *data);
+	void InitResourceView();
+	void BackupTexture(const uint8_t *const *data);
+	void GetSharedHandle(IDXGIResource *dxgi_res);
+
+	inline void Release()
+	{
+	}
+
+	inline gs_texture_3d() : gs_texture(GS_TEXTURE_3D, 0, GS_UNKNOWN) {}
+
+	gs_texture_3d(gs_device_t *device, uint32_t width, uint32_t height, uint32_t depth, gs_color_format colorFormat,
+		      uint32_t levels, const uint8_t *const *data, uint32_t flags);
+
+	gs_texture_3d(gs_device_t *device, uint32_t handle);
+};
+
+struct gs_stage_surface : gs_obj {
+	ComPtr<ID3D12Resource> texture;
+	D3D12_RESOURCE_DESC td = {};
+	D3D12_HEAP_PROPERTIES heapProp = {};
+	uint32_t width, height;
+	gs_color_format format;
+	DXGI_FORMAT dxgiFormat;
+
+	inline void Release() { texture.Release(); }
+
+	gs_stage_surface(gs_device_t* device, uint32_t width, uint32_t height, gs_color_format colorFormat);
+	gs_stage_surface(gs_device_t* device, uint32_t width, uint32_t height, bool p010);
+};
 
 struct gs_sampler_state : gs_obj {
 	gs_sampler_info info;
+	D3D12_STATIC_SAMPLER_DESC static_sampler_desc;
 	inline void Release() {}
 
 	gs_sampler_state(gs_device_t *device, const gs_sampler_info *info);
@@ -538,7 +531,6 @@ struct gs_shader : gs_obj {
 	std::vector<uint8_t> constants;
 	size_t constantSize;
 
-	// D3D11_BUFFER_DESC bd = {};
 	std::vector<uint8_t> data;
 
 	inline void UpdateParam(std::vector<uint8_t> &constData, gs_shader_param &param, bool &upload);
@@ -579,13 +571,8 @@ struct gs_vertex_shader : gs_shader {
 	bool hasTangents;
 	uint32_t nTexUnits;
 
-	// void Rebuild(ID3D11Device *dev);
-
 	inline void Release()
 	{
-		// shader.Release();
-		// layout.Release();
-		// constants.Release();
 	}
 
 	inline uint32_t NumBuffersExpected() const
@@ -608,10 +595,7 @@ struct gs_vertex_shader : gs_shader {
 
 
 struct gs_pixel_shader : gs_shader {
-	// ComPtr<ID3D11PixelShader> shader;
 	std::vector<std::unique_ptr<ShaderSampler>> samplers;
-
-	// void Rebuild(ID3D11Device *dev);
 
 	inline void Release()
 	{
@@ -629,6 +613,16 @@ struct gs_pixel_shader : gs_shader {
 	//}
 
 	gs_pixel_shader(gs_device_t *device, const char *file, const char *shaderString);
+};
+
+
+struct gs_pipeline_state {
+	ID3D12PipelineState* pipeline_state;
+	ID3D12RootSignature* root_signature;
+	struct gs_vertex_shader* vertex_shader;
+	struct gs_pixel_shader* pixel_shader;
+
+	gs_pipeline_state(gs_device_t* device, struct gs_vertex_shader* vs, struct gs_pixel_shader* ps);
 };
 
 

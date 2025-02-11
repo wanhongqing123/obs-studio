@@ -66,5 +66,38 @@ static inline D3D12_FILTER ConvertGSFilter(gs_sample_filter filter)
 
 gs_sampler_state::gs_sampler_state(gs_device_t *device, const gs_sampler_info *info)
 	: gs_obj(device, gs_type::gs_sampler_state),
-	  info(*info)
-{}
+	  info(*info) {
+	HRESULT hr;
+	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
+	memset(&descriptorHeapDesc, 0, sizeof(descriptorHeapDesc));
+	descriptorHeapDesc.NumDescriptors = 1;
+	descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+	descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	hr = device->device->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&samplerDescriptorHeap));
+	if (FAILED(hr))
+		throw HRError("Failed to create sampler heap", hr);
+
+	vec4 v4;
+
+	memset(&sd, 0, sizeof(sd));
+	sd.AddressU = ConvertGSAddressMode(info->address_u);
+	sd.AddressV = ConvertGSAddressMode(info->address_v);
+	sd.AddressW = ConvertGSAddressMode(info->address_w);
+	sd.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	sd.Filter = ConvertGSFilter(info->filter);
+	sd.MaxAnisotropy = info->max_anisotropy;
+	sd.MaxLOD = FLT_MAX;
+
+	vec4_from_rgba(&v4, info->border_color);
+	memcpy(sd.BorderColor, v4.ptr, sizeof(v4));
+
+	sampler = samplerDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+        device->device->CreateSampler(&sd, sampler);
+	
+
+	if (FAILED(hr))
+		throw HRError("Failed to create sampler state", hr);
+
+
+
+}

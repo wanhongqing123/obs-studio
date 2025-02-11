@@ -12,6 +12,7 @@ target_sources(libobs-d3d12 PRIVATE
     d3d12-stagesurf.cpp
     d3d12-subsystem.cpp
     d3d12-subsystem.hpp
+    d3d12-upload-buffer.cpp
     d3d12-texture2d.cpp
     d3d12-texture3d.cpp
     d3d12-vertexbuffer.cpp

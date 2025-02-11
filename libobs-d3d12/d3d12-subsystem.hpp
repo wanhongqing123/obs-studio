@@ -323,6 +323,23 @@ static inline D3D12_PRIMITIVE_TOPOLOGY ConvertGSTopology(gs_draw_mode mode)
 	return D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
 }
 
+static inline D3D12_GPU_DESCRIPTOR_HANDLE D3D12_CPUtoGPUHandle(ID3D12DescriptorHeap* heap, D3D12_CPU_DESCRIPTOR_HANDLE CPUHandle)
+{
+	D3D12_CPU_DESCRIPTOR_HANDLE CPUHeapStart;
+	D3D12_GPU_DESCRIPTOR_HANDLE GPUHandle;
+	SIZE_T offset;
+
+	// Calculate the correct offset into the heap
+	CPUHeapStart = heap->GetCPUDescriptorHandleForHeapStart();
+	offset = CPUHandle.ptr - CPUHeapStart.ptr;
+
+	GPUHandle = heap->GetGPUDescriptorHandleForHeapStart();
+	GPUHandle.ptr += offset;
+
+	return GPUHandle;
+}
+
+
 struct VBDataPtr {
 	gs_vb_data *data;
 
@@ -333,6 +350,7 @@ struct VBDataPtr {
 enum class gs_type {
 	gs_vertex_buffer,
 	gs_index_buffer,
+	gs_upload_buffer,
 	gs_texture_2d,
 	gs_zstencil_buffer,
 	gs_stage_surface,
@@ -356,6 +374,33 @@ struct gs_obj {
 
 	gs_obj(gs_device_t *device, gs_type type);
 	virtual ~gs_obj();
+};
+
+
+struct gs_rootsig_parameter {
+	D3D12_ROOT_PARAMETER rootSignatureParam;
+	std::vector<D3D12_DESCRIPTOR_RANGE> desc_ranges;
+
+	void InitAsConstants(uint32_t register_index, uint32_t numDwords,
+			     D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	void InitAsConstantBuffer(uint32_t register_index,
+				  D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	void InitAsBufferSRV(uint32_t register_index, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	void InitAsBufferUAV(uint32_t register_index, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	void InitAsDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE type, uint32_t rangeIndex, uint32_t register_index, uint32_t count,
+				   D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+};
+
+
+struct gs_upload_buffer : gs_obj {
+	ComPtr<ID3D12Resource> resource;
+	D3D12_RANGE range;
+	size_t buffer_size;
+
+        gs_upload_buffer(gs_device* device, size_t buffer_size);
+	void Map();
+	void Unmap();
+
 };
 
 struct gs_texture : gs_obj {
@@ -387,14 +432,18 @@ struct gs_texture : gs_obj {
 };
 
 struct gs_texture_2d : gs_texture {
-	ComPtr<ID3D12Resource> upload;
-	ComPtr<ID3D12Resource> texture;
+	gs_upload_buffer* upload_buffer;
+
 	ComPtr<ID3D12DescriptorHeap> textureDescriptorHeap;
-	ComPtr<ID3D12Resource> renderTarget[6];
-	D3D12_CPU_DESCRIPTOR_HANDLE renderTargetCpuDescHandle[6];
-	ComPtr<ID3D12DescriptorHeap> renderTargetDescriptorHeap[6];
-	ComPtr<ID3D12Resource> renderTargetLinear[6];
-	D3D12_CPU_DESCRIPTOR_HANDLE renderTargetLinearCpuDescHandle[6];
+	ComPtr<ID3D12Resource> texture;
+	D3D12_CPU_DESCRIPTOR_HANDLE textureResourceView;
+
+	ComPtr<ID3D12DescriptorHeap> renderTargetDescriptorHeap;
+	D3D12_CPU_DESCRIPTOR_HANDLE renderTargetView[6];
+
+	ComPtr<ID3D12DescriptorHeap> renderTargetLinearDescriptorHeap;
+	D3D12_CPU_DESCRIPTOR_HANDLE renderTargetLinearView[6];
+
 	ComPtr<IDXGISurface1> gdiSurface;
 
 	uint32_t width = 0, height = 0;
@@ -519,7 +568,9 @@ struct gs_stage_surface : gs_obj {
 
 struct gs_sampler_state : gs_obj {
 	gs_sampler_info info;
-	D3D12_STATIC_SAMPLER_DESC static_sampler_desc;
+	ID3D12DescriptorHeap* samplerDescriptorHeap;
+	D3D12_CPU_DESCRIPTOR_HANDLE sampler;
+	D3D12_SAMPLER_DESC  sd = {};
 	inline void Release() {}
 
 	gs_sampler_state(gs_device_t *device, const gs_sampler_info *info);
@@ -756,7 +807,7 @@ struct gs_device {
 	ComPtr<IDXGIFactory6> factory;
 	ComPtr<ID3D12Device> device;
 	ComPtr<IDXGIAdapter> adapter;
-	ComPtr<ID3D12GraphicsCommandList> context;
+	ComPtr<ID3D12GraphicsCommandList2> commandList;
 	uint32_t adpIdx = 0;
 	bool nv12Supported = false;
 	bool p010Supported = false;

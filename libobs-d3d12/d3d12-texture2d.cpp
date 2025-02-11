@@ -120,9 +120,6 @@ void gs_texture_2d::InitTexture(const uint8_t* const* data)
 
 	D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAGS::D3D12_HEAP_FLAG_NONE | D3D12_HEAP_FLAGS::D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES;
 	D3D12_RESOURCE_FLAGS resFlags = D3D12_RESOURCE_FLAGS::D3D12_RESOURCE_FLAG_NONE;
-	if (isDynamic) {
-		// upload buffer;
-	}
 
 	if (isRenderTarget || isGDICompatible) {
 		heapFlags = heapFlags | D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES;
@@ -132,27 +129,112 @@ void gs_texture_2d::InitTexture(const uint8_t* const* data)
 		heapFlags = heapFlags | D3D12_HEAP_FLAGS::D3D12_HEAP_FLAG_SHARED;
 	}
 
-	if (data) {
-		BackupTexture(data);
-		InitSRD(srd);
-	}
 	D3D12_RESOURCE_STATES initResState = D3D12_RESOURCE_STATE_COPY_DEST;
 	hr = device->device->CreateCommittedResource(&heapProp, heapFlags, &td, initResState, nullptr, IID_PPV_ARGS(&texture));
 	if (FAILED(hr))
 		throw HRError("Failed to create 2D texture", hr);
+
+	if (isDynamic || data) {
+		auto desc = texture->GetDesc();
+		upload_buffer = new gs_upload_buffer(device, desc.Width * desc.Height);
+	}
+
+	if (data) {
+		BackupTexture(data);
+		InitSRD(srd);
+	}
 }
 
-void gs_texture_2d::InitResourceView()
-{
+void gs_texture_2d::InitResourceView() {
+	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
+	memset(&descriptorHeapDesc, 0, sizeof(descriptorHeapDesc));
+	descriptorHeapDesc.NumDescriptors = 1;
+	descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	HRESULT hr = device->device->CreateDescriptorHeap(
+		&descriptorHeapDesc, IID_PPV_ARGS(&textureDescriptorHeap));
+
+	if (FAILED(hr))
+		throw HRError("Failed to create 2D desc heap", hr);
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC resourceViewDesc;
+	memset(&resourceViewDesc, 0, sizeof(resourceViewDesc));
+
+	resourceViewDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	resourceViewDesc.Format = dxgiFormatView;
+
+	if (type == GS_TEXTURE_CUBE) {
+		resourceViewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+		resourceViewDesc.Texture2D.MipLevels = genMipmaps || !levels ? -1 : levels;
+	}
+	else {
+		resourceViewDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		resourceViewDesc.Texture2D.MipLevels = genMipmaps || !levels ? -1 : levels;
+	}
+
+	textureResourceView = textureDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+	device->device->CreateShaderResourceView(texture, &resourceViewDesc, textureResourceView);
 }
 
 void gs_texture_2d::InitRenderTargets()
 {
 	HRESULT hr;
-	if (type == GS_TEXTURE_2D) {
 
+	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
+	memset(&descriptorHeapDesc, 0, sizeof(descriptorHeapDesc));
+	descriptorHeapDesc.NumDescriptors = 6;
+	descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	hr = device->device->CreateDescriptorHeap(
+		&descriptorHeapDesc, IID_PPV_ARGS(&renderTargetDescriptorHeap));
+
+	if (FAILED(hr))
+		throw HRError("Failed to create RTV Heap", hr);
+
+	hr = device->device->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&renderTargetLinearDescriptorHeap));
+	if (FAILED(hr))
+		throw HRError("Failed to create RTV Linear Heap", hr);
+
+	D3D12_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
+	memset(&renderTargetViewDesc, 0, sizeof(renderTargetViewDesc));
+
+	if (type == GS_TEXTURE_2D) {
+		renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+		renderTargetViewDesc.Texture2D.MipSlice = 0;
+		renderTargetViewDesc.Format = dxgiFormatView;
+		renderTargetView[0] = renderTargetDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+		device->device->CreateRenderTargetView(texture, &renderTargetViewDesc, renderTargetView[0]);
+		if (dxgiFormatView == dxgiFormatViewLinear) {
+			renderTargetLinearView[0] = renderTargetView[0];
+		}
+		else {
+			renderTargetViewDesc.Format = dxgiFormatViewLinear;
+			renderTargetLinearView[0] = renderTargetLinearDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+			device->device->CreateRenderTargetView(texture, &renderTargetViewDesc, renderTargetLinearView[0]);
+		}
 	}
 	else {
+		renderTargetViewDesc.Format = dxgiFormatView;
+		renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+		renderTargetViewDesc.Texture2DArray.MipSlice = 0;
+		renderTargetViewDesc.Texture2DArray.ArraySize = 1;
+		for (UINT i = 0; i < 6; i++) {
+			renderTargetViewDesc.Texture2DArray.FirstArraySlice = i;
+			renderTargetView[i].ptr =
+				renderTargetDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr +
+				i * (device->device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV));
+			device->device->CreateRenderTargetView(texture, &renderTargetViewDesc, renderTargetView[i]);
+			if (dxgiFormatView == dxgiFormatViewLinear) {
+				renderTargetLinearView[i] = renderTargetView[i];
+			} else {
+				renderTargetViewDesc.Format = dxgiFormatViewLinear;
+				renderTargetLinearView[i].ptr =
+					renderTargetLinearDescriptorHeap->GetCPUDescriptorHandleForHeapStart().ptr +
+					i * (device->device->GetDescriptorHandleIncrementSize(
+						    D3D12_DESCRIPTOR_HEAP_TYPE_RTV));
+				device->device->CreateRenderTargetView(texture, &renderTargetViewDesc,
+					renderTargetLinearView[i]);
+			}
+		}
 	}
 }
 

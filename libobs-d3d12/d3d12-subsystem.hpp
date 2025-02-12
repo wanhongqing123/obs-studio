@@ -340,6 +340,20 @@ static inline D3D12_GPU_DESCRIPTOR_HANDLE D3D12_CPUtoGPUHandle(ID3D12DescriptorH
 }
 
 
+static inline ID3D12DescriptorHeap* CreateDescriptorHeap(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type) {
+	D3D12_DESCRIPTOR_HEAP_DESC Desc;
+	Desc.Type = type;
+	Desc.NumDescriptors = 1;
+	Desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	Desc.NodeMask = 1;
+
+	ID3D12DescriptorHeap* pHeap;
+	HRESULT hr = device->CreateDescriptorHeap(&Desc,IID_PPV_ARGS(&pHeap));
+	if (FAILED(hr))
+		throw HRError("Failed to create desc heap", hr);
+	return pHeap;
+}
+
 struct VBDataPtr {
 	gs_vb_data *data;
 
@@ -537,11 +551,21 @@ struct gs_zstencil_buffer : gs_obj {
 	DXGI_FORMAT dxgiFormat;
 
 	D3D12_RESOURCE_DESC td = {};
-	D3D12_DEPTH_STENCIL_VIEW_DESC dsvd = {};
 	D3D12_CLEAR_VALUE clearValue;
 	D3D12_HEAP_PROPERTIES headProp = {};
-	
+
+	D3D12_CPU_DESCRIPTOR_HANDLE hDSV[4];
+	ID3D12DescriptorHeap* dsvDescHeap[4];
+
+
+	D3D12_CPU_DESCRIPTOR_HANDLE hDepthSRV;
+	ID3D12DescriptorHeap* depthSRVHeap;
+
+	D3D12_CPU_DESCRIPTOR_HANDLE hStencilSRV;
+	ID3D12DescriptorHeap* stencilSRVHeap;
+
 	void InitBuffer();
+	void CreateDerivedViews(ID3D12Device* device, DXGI_FORMAT format);
 
 	inline void Release()
 	{
@@ -736,10 +760,19 @@ struct gs_pipeline_state {
 
 struct gs_vertex_buffer : gs_obj {
 	ComPtr<ID3D12Resource> vertexBuffer;
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+
 	ComPtr<ID3D12Resource> normalBuffer;
+	D3D12_VERTEX_BUFFER_VIEW normalBufferView;
+
 	ComPtr<ID3D12Resource> colorBuffer;
+	D3D12_VERTEX_BUFFER_VIEW colorBufferView;
+
 	ComPtr<ID3D12Resource> tangentBuffer;
+	D3D12_VERTEX_BUFFER_VIEW tangentBufferView;
+
 	std::vector<ComPtr<ID3D12Resource>> uvBuffers;
+	std::vector<D3D12_VERTEX_BUFFER_VIEW> uvBufferViews;
 
 	bool dynamic;
 	VBDataPtr vbd;
@@ -748,9 +781,9 @@ struct gs_vertex_buffer : gs_obj {
 
 	void FlushBuffer(ID3D12Resource *buffer, void *array, size_t elementSize);
 
-	UINT MakeBufferList(gs_vertex_shader *shader, ID3D12Resource **buffers, uint32_t *strides);
+	UINT MakeBufferList(gs_vertex_shader *shader, D3D12_VERTEX_BUFFER_VIEW* views);
 
-	void InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer);
+	void InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer, D3D12_VERTEX_BUFFER_VIEW* view);
 
 	void BuildBuffers();
 

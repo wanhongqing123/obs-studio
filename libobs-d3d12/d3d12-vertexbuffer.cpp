@@ -19,13 +19,14 @@
 #include <graphics/vec3.h>
 #include "d3d12-subsystem.hpp"
 
-static inline void PushBuffer(UINT *refNumBuffers, ID3D12Resource **buffers, uint32_t *strides, ID3D12Resource *buffer,
-			      size_t elementSize, const char *name)
+static inline void PushBuffer(UINT *refNumBuffers, D3D12_VERTEX_BUFFER_VIEW *views,
+			      const D3D12_VERTEX_BUFFER_VIEW &view, const char *name)
 {
 	const UINT numBuffers = *refNumBuffers;
-	if (buffer) {
-		buffers[numBuffers] = buffer;
-		strides[numBuffers] = (uint32_t)elementSize;
+	if (view.BufferLocation) {
+		views[numBuffers].BufferLocation = view.BufferLocation;
+		views[numBuffers].SizeInBytes = view.SizeInBytes;
+		views[numBuffers].StrideInBytes = view.StrideInBytes;
 		*refNumBuffers = numBuffers + 1;
 	} else {
 		blog(LOG_ERROR, "This vertex shader requires a %s buffer", name);
@@ -46,21 +47,20 @@ void gs_vertex_buffer::FlushBuffer(ID3D12Resource *buffer, void *array, size_t e
 	buffer->Unmap(0, &range);
 }
 
-UINT gs_vertex_buffer::MakeBufferList(gs_vertex_shader *shader, ID3D12Resource **buffers, uint32_t *strides)
+UINT gs_vertex_buffer::MakeBufferList(gs_vertex_shader* shader, D3D12_VERTEX_BUFFER_VIEW* views)
 {
 	UINT numBuffers = 0;
-	PushBuffer(&numBuffers, buffers, strides, vertexBuffer, sizeof(vec3), "point");
+	PushBuffer(&numBuffers, views, vertexBufferView, "point");
 
 	if (shader->hasNormals)
-		PushBuffer(&numBuffers, buffers, strides, normalBuffer, sizeof(vec3), "normal");
+		PushBuffer(&numBuffers, views, normalBufferView, "normal");
 	if (shader->hasColors)
-		PushBuffer(&numBuffers, buffers, strides, colorBuffer, sizeof(uint32_t), "color");
+		PushBuffer(&numBuffers, views, colorBufferView, "color");
 	if (shader->hasTangents)
-		PushBuffer(&numBuffers, buffers, strides, tangentBuffer, sizeof(vec3), "tangent");
+		PushBuffer(&numBuffers, views,  tangentBufferView, "tangent");
 	if (shader->nTexUnits <= uvBuffers.size()) {
 		for (size_t i = 0; i < shader->nTexUnits; i++) {
-			buffers[numBuffers] = uvBuffers[i];
-			strides[numBuffers] = (uint32_t)uvSizes[i];
+			views[numBuffers] = uvBufferViews[i];
 			++numBuffers;
 		}
 	} else {
@@ -73,7 +73,7 @@ UINT gs_vertex_buffer::MakeBufferList(gs_vertex_shader *shader, ID3D12Resource *
 	return numBuffers;
 }
 
-void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer)
+void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer, D3D12_VERTEX_BUFFER_VIEW* view)
 {
 	D3D12_RESOURCE_DESC desc;
 	D3D12_HEAP_PROPERTIES props;
@@ -86,7 +86,7 @@ void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVert
 	props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
 	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	desc.Width = UINT(numVerts * elementSize);
+	desc.Width = numVerts * elementSize;
 	desc.Height = 1;
 	desc.DepthOrArraySize = 1;
 	desc.MipLevels = 1;
@@ -103,20 +103,24 @@ void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVert
 						     nullptr, IID_PPV_ARGS(buffer));
 	if (FAILED(hr))
 		throw HRError("Failed to create buffer", hr);
+
+	view->BufferLocation = (*buffer)->GetGPUVirtualAddress();
+	view->SizeInBytes = numVerts * elementSize;
+	view->StrideInBytes = numVerts * elementSize;
 }
 
 void gs_vertex_buffer::BuildBuffers()
 {
-	InitBuffer(sizeof(vec3), vbd.data->num, vbd.data->points, &vertexBuffer);
+	InitBuffer(sizeof(vec3), vbd.data->num, vbd.data->points, &vertexBuffer, &vertexBufferView);
 
 	if (vbd.data->normals)
-		InitBuffer(sizeof(vec3), vbd.data->num, vbd.data->normals, &normalBuffer);
+		InitBuffer(sizeof(vec3), vbd.data->num, vbd.data->normals, &normalBuffer, &normalBufferView);
 
 	if (vbd.data->tangents)
-		InitBuffer(sizeof(vec3), vbd.data->num, vbd.data->tangents, &tangentBuffer);
+		InitBuffer(sizeof(vec3), vbd.data->num, vbd.data->tangents, &tangentBuffer, &tangentBufferView);
 
 	if (vbd.data->colors)
-		InitBuffer(sizeof(uint32_t), vbd.data->num, vbd.data->colors, &colorBuffer);
+		InitBuffer(sizeof(uint32_t), vbd.data->num, vbd.data->colors, &colorBuffer, &colorBufferView);
 
 	for (size_t i = 0; i < vbd.data->num_tex; i++) {
 		struct gs_tvertarray *tverts = vbd.data->tvarray + i;
@@ -127,10 +131,12 @@ void gs_vertex_buffer::BuildBuffers()
 			throw "No texture vertices specified";
 
 		ComPtr<ID3D12Resource> buffer;
-		InitBuffer(tverts->width * sizeof(float), vbd.data->num, tverts->array, &buffer);
+		D3D12_VERTEX_BUFFER_VIEW uvView;
+		InitBuffer(tverts->width * sizeof(float), vbd.data->num, tverts->array, &buffer, &uvView);
 
 		uvBuffers.push_back(buffer);
 		uvSizes.push_back(tverts->width * sizeof(float));
+		uvBufferViews.push_back(uvView);
 	}
 }
 

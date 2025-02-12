@@ -212,8 +212,8 @@ void gs_shader::Compile(const char *shaderString, const char *file, const char *
 	}
 
 	if (!is_cached) {
-		hr = D3DCompile(shaderString, shaderStrLen, file, NULL, NULL, "main", target,
-				0, 0, shader, errorsBlob.Assign());
+		hr = D3DCompile(shaderString, shaderStrLen, file, NULL, NULL, "main", target, 0, 0, shader,
+				errorsBlob.Assign());
 		if (FAILED(hr)) {
 			if (errorsBlob != NULL && errorsBlob->GetBufferSize())
 				throw ShaderError(errorsBlob, hr);

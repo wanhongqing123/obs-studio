@@ -17,12 +17,12 @@
 
 #include "d3d12-subsystem.hpp"
 
-gs_stage_surface::gs_stage_surface(gs_device_t* device, uint32_t width, uint32_t height, gs_color_format colorFormat)
+gs_stage_surface::gs_stage_surface(gs_device_t *device, uint32_t width, uint32_t height, gs_color_format colorFormat)
 	: gs_obj(device, gs_type::gs_stage_surface),
-	width(width),
-	height(height),
-	format(colorFormat),
-	dxgiFormat(ConvertGSTextureFormatView(colorFormat))
+	  width(width),
+	  height(height),
+	  format(colorFormat),
+	  dxgiFormat(ConvertGSTextureFormatView(colorFormat))
 {
 	HRESULT hr;
 
@@ -46,17 +46,17 @@ gs_stage_surface::gs_stage_surface(gs_device_t* device, uint32_t width, uint32_t
 	heapProp.VisibleNodeMask = 1;
 
 	hr = device->device->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &td,
-		D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
+						     D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
 	if (FAILED(hr))
 		throw HRError("Failed to create staging surface", hr);
 }
 
-gs_stage_surface::gs_stage_surface(gs_device_t* device, uint32_t width, uint32_t height, bool p010)
+gs_stage_surface::gs_stage_surface(gs_device_t *device, uint32_t width, uint32_t height, bool p010)
 	: gs_obj(device, gs_type::gs_stage_surface),
-	width(width),
-	height(height),
-	format(GS_UNKNOWN),
-	dxgiFormat(p010 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12)
+	  width(width),
+	  height(height),
+	  format(GS_UNKNOWN),
+	  dxgiFormat(p010 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12)
 {
 	HRESULT hr;
 
@@ -80,7 +80,7 @@ gs_stage_surface::gs_stage_surface(gs_device_t* device, uint32_t width, uint32_t
 	heapProp.VisibleNodeMask = 1;
 
 	hr = device->device->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &td,
-		D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
+						     D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
 	if (FAILED(hr))
 		throw HRError("Failed to create staging surface", hr);
 }

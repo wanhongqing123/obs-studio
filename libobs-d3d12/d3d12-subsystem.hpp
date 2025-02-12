@@ -323,7 +323,8 @@ static inline D3D12_PRIMITIVE_TOPOLOGY ConvertGSTopology(gs_draw_mode mode)
 	return D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
 }
 
-static inline D3D12_GPU_DESCRIPTOR_HANDLE D3D12_CPUtoGPUHandle(ID3D12DescriptorHeap* heap, D3D12_CPU_DESCRIPTOR_HANDLE CPUHandle)
+static inline D3D12_GPU_DESCRIPTOR_HANDLE D3D12_CPUtoGPUHandle(ID3D12DescriptorHeap *heap,
+							       D3D12_CPU_DESCRIPTOR_HANDLE CPUHandle)
 {
 	D3D12_CPU_DESCRIPTOR_HANDLE CPUHeapStart;
 	D3D12_GPU_DESCRIPTOR_HANDLE GPUHandle;
@@ -339,16 +340,16 @@ static inline D3D12_GPU_DESCRIPTOR_HANDLE D3D12_CPUtoGPUHandle(ID3D12DescriptorH
 	return GPUHandle;
 }
 
-
-static inline ID3D12DescriptorHeap* CreateDescriptorHeap(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type) {
+static inline ID3D12DescriptorHeap *CreateDescriptorHeap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type)
+{
 	D3D12_DESCRIPTOR_HEAP_DESC Desc;
 	Desc.Type = type;
 	Desc.NumDescriptors = 1;
 	Desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	Desc.NodeMask = 1;
 
-	ID3D12DescriptorHeap* pHeap;
-	HRESULT hr = device->CreateDescriptorHeap(&Desc,IID_PPV_ARGS(&pHeap));
+	ID3D12DescriptorHeap *pHeap;
+	HRESULT hr = device->CreateDescriptorHeap(&Desc, IID_PPV_ARGS(&pHeap));
 	if (FAILED(hr))
 		throw HRError("Failed to create desc heap", hr);
 	return pHeap;
@@ -390,7 +391,6 @@ struct gs_obj {
 	virtual ~gs_obj();
 };
 
-
 struct gs_rootsig_parameter {
 	D3D12_ROOT_PARAMETER rootSignatureParam;
 	std::vector<D3D12_DESCRIPTOR_RANGE> desc_ranges;
@@ -401,20 +401,18 @@ struct gs_rootsig_parameter {
 				  D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 	void InitAsBufferSRV(uint32_t register_index, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 	void InitAsBufferUAV(uint32_t register_index, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-	void InitAsDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE type, uint32_t rangeIndex, uint32_t register_index, uint32_t count,
-				   D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	void InitAsDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE type, uint32_t rangeIndex, uint32_t register_index,
+				   uint32_t count, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 };
-
 
 struct gs_upload_buffer : gs_obj {
 	ComPtr<ID3D12Resource> resource;
 	D3D12_RANGE range;
 	size_t buffer_size;
 
-        gs_upload_buffer(gs_device* device, size_t buffer_size);
+	gs_upload_buffer(gs_device *device, size_t buffer_size);
 	void Map();
 	void Unmap();
-
 };
 
 struct gs_texture : gs_obj {
@@ -446,7 +444,7 @@ struct gs_texture : gs_obj {
 };
 
 struct gs_texture_2d : gs_texture {
-	gs_upload_buffer* upload_buffer;
+	gs_upload_buffer *upload_buffer;
 
 	ComPtr<ID3D12DescriptorHeap> textureDescriptorHeap;
 	ComPtr<ID3D12Resource> texture;
@@ -489,10 +487,7 @@ struct gs_texture_2d : gs_texture {
 	void BackupTexture(const uint8_t *const *data);
 	void GetSharedHandle(IDXGIResource *dxgi_res);
 
-
-	inline void Release()
-	{
-	}
+	inline void Release() {}
 
 	inline gs_texture_2d() : gs_texture(GS_TEXTURE_2D, 0, GS_UNKNOWN) {}
 
@@ -500,9 +495,9 @@ struct gs_texture_2d : gs_texture {
 		      uint32_t levels, const uint8_t *const *data, uint32_t flags, gs_texture_type type,
 		      bool gdiCompatible, bool twoPlane = false);
 
-	gs_texture_2d(gs_device_t *device, ID3D12Resource*nv12, uint32_t flags);
+	gs_texture_2d(gs_device_t *device, ID3D12Resource *nv12, uint32_t flags);
 	gs_texture_2d(gs_device_t *device, uint32_t handle, bool ntHandle = false);
-	gs_texture_2d(gs_device_t *device, ID3D12Resource*obj);
+	gs_texture_2d(gs_device_t *device, ID3D12Resource *obj);
 };
 
 struct gs_texture_3d : gs_texture {
@@ -531,9 +526,7 @@ struct gs_texture_3d : gs_texture {
 	void BackupTexture(const uint8_t *const *data);
 	void GetSharedHandle(IDXGIResource *dxgi_res);
 
-	inline void Release()
-	{
-	}
+	inline void Release() {}
 
 	inline gs_texture_3d() : gs_texture(GS_TEXTURE_3D, 0, GS_UNKNOWN) {}
 
@@ -555,25 +548,22 @@ struct gs_zstencil_buffer : gs_obj {
 	D3D12_HEAP_PROPERTIES headProp = {};
 
 	D3D12_CPU_DESCRIPTOR_HANDLE hDSV[4];
-	ID3D12DescriptorHeap* dsvDescHeap[4];
-
+	ID3D12DescriptorHeap *dsvDescHeap[4];
 
 	D3D12_CPU_DESCRIPTOR_HANDLE hDepthSRV;
-	ID3D12DescriptorHeap* depthSRVHeap;
+	ID3D12DescriptorHeap *depthSRVHeap;
 
 	D3D12_CPU_DESCRIPTOR_HANDLE hStencilSRV;
-	ID3D12DescriptorHeap* stencilSRVHeap;
+	ID3D12DescriptorHeap *stencilSRVHeap;
 
 	void InitBuffer();
-	void CreateDerivedViews(ID3D12Device* device, DXGI_FORMAT format);
+	void CreateDerivedViews(ID3D12Device *device, DXGI_FORMAT format);
 
-	inline void Release()
-	{
-	}
+	inline void Release() {}
 
 	inline gs_zstencil_buffer() : width(0), height(0), dxgiFormat(DXGI_FORMAT_UNKNOWN) {}
 
-	gs_zstencil_buffer(gs_device_t* device, uint32_t width, uint32_t height, gs_zstencil_format format);
+	gs_zstencil_buffer(gs_device_t *device, uint32_t width, uint32_t height, gs_zstencil_format format);
 };
 
 struct gs_stage_surface : gs_obj {
@@ -586,15 +576,15 @@ struct gs_stage_surface : gs_obj {
 
 	inline void Release() { texture.Release(); }
 
-	gs_stage_surface(gs_device_t* device, uint32_t width, uint32_t height, gs_color_format colorFormat);
-	gs_stage_surface(gs_device_t* device, uint32_t width, uint32_t height, bool p010);
+	gs_stage_surface(gs_device_t *device, uint32_t width, uint32_t height, gs_color_format colorFormat);
+	gs_stage_surface(gs_device_t *device, uint32_t width, uint32_t height, bool p010);
 };
 
 struct gs_sampler_state : gs_obj {
 	gs_sampler_info info;
-	ID3D12DescriptorHeap* samplerDescriptorHeap;
+	ID3D12DescriptorHeap *samplerDescriptorHeap;
 	D3D12_CPU_DESCRIPTOR_HANDLE sampler;
-	D3D12_SAMPLER_DESC  sd = {};
+	D3D12_SAMPLER_DESC sd = {};
 	inline void Release() {}
 
 	gs_sampler_state(gs_device_t *device, const gs_sampler_info *info);
@@ -660,7 +650,6 @@ struct ShaderSampler {
 	}
 };
 
-
 struct gs_vertex_shader : gs_shader {
 	gs_shader_param *world, *viewProj;
 
@@ -671,9 +660,7 @@ struct gs_vertex_shader : gs_shader {
 	bool hasTangents;
 	uint32_t nTexUnits;
 
-	inline void Release()
-	{
-	}
+	inline void Release() {}
 
 	inline uint32_t NumBuffersExpected() const
 	{
@@ -692,7 +679,6 @@ struct gs_vertex_shader : gs_shader {
 
 	gs_vertex_shader(gs_device_t *device, const char *file, const char *shaderString);
 };
-
 
 struct gs_pixel_shader : gs_shader {
 	std::vector<std::unique_ptr<ShaderSampler>> samplers;
@@ -743,20 +729,18 @@ struct gs_swap_chain : gs_obj {
 		swap.Clear();
 	}
 
-	gs_swap_chain(gs_device* device, const gs_init_data* data);
+	gs_swap_chain(gs_device *device, const gs_init_data *data);
 	virtual ~gs_swap_chain();
 };
 
-
 struct gs_pipeline_state {
-	ID3D12PipelineState* pipeline_state;
-	ID3D12RootSignature* root_signature;
-	struct gs_vertex_shader* vertex_shader;
-	struct gs_pixel_shader* pixel_shader;
+	ID3D12PipelineState *pipeline_state;
+	ID3D12RootSignature *root_signature;
+	struct gs_vertex_shader *vertex_shader;
+	struct gs_pixel_shader *pixel_shader;
 
-	gs_pipeline_state(gs_device_t* device, struct gs_vertex_shader* vs, struct gs_pixel_shader* ps);
+	gs_pipeline_state(gs_device_t *device, struct gs_vertex_shader *vs, struct gs_pixel_shader *ps);
 };
-
 
 struct gs_vertex_buffer : gs_obj {
 	ComPtr<ID3D12Resource> vertexBuffer;
@@ -781,9 +765,10 @@ struct gs_vertex_buffer : gs_obj {
 
 	void FlushBuffer(ID3D12Resource *buffer, void *array, size_t elementSize);
 
-	UINT MakeBufferList(gs_vertex_shader *shader, D3D12_VERTEX_BUFFER_VIEW* views);
+	UINT MakeBufferList(gs_vertex_shader *shader, D3D12_VERTEX_BUFFER_VIEW *views);
 
-	void InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer, D3D12_VERTEX_BUFFER_VIEW* view);
+	void InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer,
+			D3D12_VERTEX_BUFFER_VIEW *view);
 
 	void BuildBuffers();
 
@@ -798,7 +783,6 @@ struct gs_vertex_buffer : gs_obj {
 
 	gs_vertex_buffer(gs_device_t *device, struct gs_vb_data *data, uint32_t flags);
 };
-
 
 /* exception-safe RAII wrapper for index buffer data (NOTE: not copy-safe) */
 struct DataPtr {
@@ -830,8 +814,8 @@ struct gs_monitor_color_info {
 
 	gs_monitor_color_info(bool hdr, int bits_per_color, ULONG sdr_white_nits)
 		: hdr(hdr),
-		bits_per_color(bits_per_color),
-		sdr_white_nits(sdr_white_nits)
+		  bits_per_color(bits_per_color),
+		  sdr_white_nits(sdr_white_nits)
 	{
 	}
 };
@@ -846,22 +830,22 @@ struct gs_device {
 	bool p010Supported = false;
 	bool fastClearSupported = false;
 
-	gs_texture_2d* curRenderTarget = nullptr;
-	gs_zstencil_buffer* curZStencilBuffer = nullptr;
+	gs_texture_2d *curRenderTarget = nullptr;
+	gs_zstencil_buffer *curZStencilBuffer = nullptr;
 	int curRenderSide = 0;
 	enum gs_color_space curColorSpace = GS_CS_SRGB;
 	bool curFramebufferSrgb = false;
 	bool curFramebufferInvalidate = false;
-	gs_texture* curTextures[GS_MAX_TEXTURES];
-	gs_sampler_state* curSamplers[GS_MAX_TEXTURES];
-	gs_vertex_buffer* curVertexBuffer = nullptr;
-	gs_index_buffer* curIndexBuffer = nullptr;
-	gs_vertex_shader* curVertexShader = nullptr;
-	gs_pixel_shader* curPixelShader = nullptr;
-	gs_swap_chain* curSwapChain = nullptr;
+	gs_texture *curTextures[GS_MAX_TEXTURES];
+	gs_sampler_state *curSamplers[GS_MAX_TEXTURES];
+	gs_vertex_buffer *curVertexBuffer = nullptr;
+	gs_index_buffer *curIndexBuffer = nullptr;
+	gs_vertex_shader *curVertexShader = nullptr;
+	gs_pixel_shader *curPixelShader = nullptr;
+	gs_swap_chain *curSwapChain = nullptr;
 
-	gs_vertex_buffer* lastVertexBuffer = nullptr;
-	gs_vertex_shader* lastVertexShader = nullptr;
+	gs_vertex_buffer *lastVertexBuffer = nullptr;
+	gs_vertex_shader *lastVertexShader = nullptr;
 
 	bool zstencilStateChanged = true;
 	bool rasterStateChanged = true;

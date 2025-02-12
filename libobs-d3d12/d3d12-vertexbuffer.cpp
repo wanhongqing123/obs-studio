@@ -47,7 +47,7 @@ void gs_vertex_buffer::FlushBuffer(ID3D12Resource *buffer, void *array, size_t e
 	buffer->Unmap(0, &range);
 }
 
-UINT gs_vertex_buffer::MakeBufferList(gs_vertex_shader* shader, D3D12_VERTEX_BUFFER_VIEW* views)
+UINT gs_vertex_buffer::MakeBufferList(gs_vertex_shader *shader, D3D12_VERTEX_BUFFER_VIEW *views)
 {
 	UINT numBuffers = 0;
 	PushBuffer(&numBuffers, views, vertexBufferView, "point");
@@ -57,7 +57,7 @@ UINT gs_vertex_buffer::MakeBufferList(gs_vertex_shader* shader, D3D12_VERTEX_BUF
 	if (shader->hasColors)
 		PushBuffer(&numBuffers, views, colorBufferView, "color");
 	if (shader->hasTangents)
-		PushBuffer(&numBuffers, views,  tangentBufferView, "tangent");
+		PushBuffer(&numBuffers, views, tangentBufferView, "tangent");
 	if (shader->nTexUnits <= uvBuffers.size()) {
 		for (size_t i = 0; i < shader->nTexUnits; i++) {
 			views[numBuffers] = uvBufferViews[i];
@@ -73,7 +73,8 @@ UINT gs_vertex_buffer::MakeBufferList(gs_vertex_shader* shader, D3D12_VERTEX_BUF
 	return numBuffers;
 }
 
-void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer, D3D12_VERTEX_BUFFER_VIEW* view)
+void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer,
+				  D3D12_VERTEX_BUFFER_VIEW *view)
 {
 	D3D12_RESOURCE_DESC desc;
 	D3D12_HEAP_PROPERTIES props;
@@ -153,4 +154,3 @@ gs_vertex_buffer::gs_vertex_buffer(gs_device_t *device, struct gs_vb_data *data,
 
 	BuildBuffers();
 }
-

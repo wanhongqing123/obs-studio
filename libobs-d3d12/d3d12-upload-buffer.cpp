@@ -18,7 +18,10 @@
 #include <util/base.h>
 #include "d3d12-subsystem.hpp"
 
-gs_upload_buffer::gs_upload_buffer(gs_device* device, size_t size) : gs_obj(device, gs_type::gs_upload_buffer), buffer_size(size) {
+gs_upload_buffer::gs_upload_buffer(gs_device *device, size_t size)
+	: gs_obj(device, gs_type::gs_upload_buffer),
+	  buffer_size(size)
+{
 	D3D12_HEAP_PROPERTIES HeapProps;
 	HeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
 	HeapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
@@ -40,7 +43,8 @@ gs_upload_buffer::gs_upload_buffer(gs_device* device, size_t size) : gs_obj(devi
 	ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
 	HRESULT hr = device->device->CreateCommittedResource(&HeapProps, D3D12_HEAP_FLAG_NONE, &ResourceDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&resource));
+							     D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+							     IID_PPV_ARGS(&resource));
 
 	if (FAILED(hr))
 		throw HRError("Failed to create upload buffer", hr);

@@ -18,5 +18,4 @@
 #include <util/base.h>
 #include "d3d12-subsystem.hpp"
 
-gs_pipeline_state::gs_pipeline_state(gs_device_t* device, struct gs_vertex_shader* vs, struct gs_pixel_shader* ps) {
-}
+gs_pipeline_state::gs_pipeline_state(gs_device_t *device, struct gs_vertex_shader *vs, struct gs_pixel_shader *ps) {}

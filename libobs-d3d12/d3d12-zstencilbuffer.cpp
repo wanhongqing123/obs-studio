@@ -17,7 +17,8 @@
 
 #include "d3d12-subsystem.hpp"
 
-static inline DXGI_FORMAT GetDSVFormat(DXGI_FORMAT defaultFormat) {
+static inline DXGI_FORMAT GetDSVFormat(DXGI_FORMAT defaultFormat)
+{
 	switch (defaultFormat) {
 		// 32-bit Z w/ Stencil
 	case DXGI_FORMAT_R32G8X24_TYPELESS:
@@ -50,7 +51,8 @@ static inline DXGI_FORMAT GetDSVFormat(DXGI_FORMAT defaultFormat) {
 	}
 }
 
-static inline DXGI_FORMAT GetDepthFormat(DXGI_FORMAT defaultFormat) {
+static inline DXGI_FORMAT GetDepthFormat(DXGI_FORMAT defaultFormat)
+{
 	switch (defaultFormat) {
 		// 32-bit Z w/ Stencil
 	case DXGI_FORMAT_R32G8X24_TYPELESS:
@@ -83,7 +85,8 @@ static inline DXGI_FORMAT GetDepthFormat(DXGI_FORMAT defaultFormat) {
 	}
 }
 
-static inline DXGI_FORMAT GetStencilFormat(DXGI_FORMAT defaultFormat) {
+static inline DXGI_FORMAT GetStencilFormat(DXGI_FORMAT defaultFormat)
+{
 	switch (defaultFormat) {
 		// 32-bit Z w/ Stencil
 	case DXGI_FORMAT_R32G8X24_TYPELESS:
@@ -103,7 +106,6 @@ static inline DXGI_FORMAT GetStencilFormat(DXGI_FORMAT defaultFormat) {
 		return DXGI_FORMAT_UNKNOWN;
 	}
 }
-
 
 void gs_zstencil_buffer::InitBuffer()
 {
@@ -133,17 +135,17 @@ void gs_zstencil_buffer::InitBuffer()
 	headProp.CreationNodeMask = 1;
 	headProp.VisibleNodeMask = 1;
 
-	hr = device->device->CreateCommittedResource(&headProp, D3D12_HEAP_FLAG_NONE,
-		&td, D3D12_RESOURCE_STATE_COMMON, &clearValue, IID_PPV_ARGS(&texture));
+	hr = device->device->CreateCommittedResource(&headProp, D3D12_HEAP_FLAG_NONE, &td, D3D12_RESOURCE_STATE_COMMON,
+						     &clearValue, IID_PPV_ARGS(&texture));
 	if (FAILED(hr))
 		throw HRError("Failed to create depth stencil texture", hr);
 
 	CreateDerivedViews(device->device, dxgiFormat);
 }
 
-void gs_zstencil_buffer::CreateDerivedViews(ID3D12Device* device, DXGI_FORMAT format)
+void gs_zstencil_buffer::CreateDerivedViews(ID3D12Device *device, DXGI_FORMAT format)
 {
-	ID3D12Resource* resource = texture.Get();
+	ID3D12Resource *resource = texture.Get();
 
 	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
 	dsvDesc.Format = GetDSVFormat(format);
@@ -153,7 +155,6 @@ void gs_zstencil_buffer::CreateDerivedViews(ID3D12Device* device, DXGI_FORMAT fo
 	} else {
 		dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
 	}
-
 
 	dsvDescHeap[0] = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 	hDSV[0] = dsvDescHeap[0]->GetCPUDescriptorHandleForHeapStart();
@@ -185,7 +186,6 @@ void gs_zstencil_buffer::CreateDerivedViews(ID3D12Device* device, DXGI_FORMAT fo
 		hDSV[3] = hDSV[1];
 	}
 
-
 	depthSRVHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	hDepthSRV = depthSRVHeap->GetCPUDescriptorHandleForHeapStart();
 
@@ -212,13 +212,12 @@ void gs_zstencil_buffer::CreateDerivedViews(ID3D12Device* device, DXGI_FORMAT fo
 	}
 }
 
-
-gs_zstencil_buffer::gs_zstencil_buffer(gs_device_t* device, uint32_t width, uint32_t height, gs_zstencil_format format)
+gs_zstencil_buffer::gs_zstencil_buffer(gs_device_t *device, uint32_t width, uint32_t height, gs_zstencil_format format)
 	: gs_obj(device, gs_type::gs_zstencil_buffer),
-	width(width),
-	height(height),
-	format(format),
-	dxgiFormat(ConvertGSZStencilFormat(format))
+	  width(width),
+	  height(height),
+	  format(format),
+	  dxgiFormat(ConvertGSZStencilFormat(format))
 {
 	InitBuffer();
 }

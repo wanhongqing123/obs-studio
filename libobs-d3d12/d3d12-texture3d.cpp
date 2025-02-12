@@ -18,7 +18,7 @@
 #include <util/base.h>
 #include "d3d12-subsystem.hpp"
 
-void gs_texture_3d::InitSRD(std::vector<D3D12_SUBRESOURCE_DATA>& srd)
+void gs_texture_3d::InitSRD(std::vector<D3D12_SUBRESOURCE_DATA> &srd)
 {
 	uint32_t rowSizeBits = width * gs_get_format_bpp(format);
 	uint32_t sliceSizeBytes = height * rowSizeBits / 8;
@@ -42,7 +42,7 @@ void gs_texture_3d::InitSRD(std::vector<D3D12_SUBRESOURCE_DATA>& srd)
 	}
 }
 
-void gs_texture_3d::BackupTexture(const uint8_t* const* data)
+void gs_texture_3d::BackupTexture(const uint8_t *const *data)
 {
 	this->data.resize(levels);
 
@@ -58,7 +58,7 @@ void gs_texture_3d::BackupTexture(const uint8_t* const* data)
 		const uint32_t texSize = bbp * w * h * d / 8;
 		this->data[i].resize(texSize);
 
-		std::vector<uint8_t>& subData = this->data[i];
+		std::vector<uint8_t> &subData = this->data[i];
 		memcpy(&subData[0], data[i], texSize);
 
 		if (w > 1)
@@ -70,7 +70,7 @@ void gs_texture_3d::BackupTexture(const uint8_t* const* data)
 	}
 }
 
-void gs_texture_3d::GetSharedHandle(IDXGIResource* dxgi_res)
+void gs_texture_3d::GetSharedHandle(IDXGIResource *dxgi_res)
 {
 	HANDLE handle;
 	HRESULT hr;
@@ -78,49 +78,43 @@ void gs_texture_3d::GetSharedHandle(IDXGIResource* dxgi_res)
 	hr = dxgi_res->GetSharedHandle(&handle);
 	if (FAILED(hr)) {
 		blog(LOG_WARNING,
-			"GetSharedHandle: Failed to "
-			"get shared handle: %08lX",
-			hr);
-	}
-	else {
+		     "GetSharedHandle: Failed to "
+		     "get shared handle: %08lX",
+		     hr);
+	} else {
 		sharedHandle = (uint32_t)(uintptr_t)handle;
 	}
 }
 
-void gs_texture_3d::InitTexture(const uint8_t* const* data)
-{
-}
+void gs_texture_3d::InitTexture(const uint8_t *const *data) {}
 
-void gs_texture_3d::InitResourceView()
-{
-	
-}
+void gs_texture_3d::InitResourceView() {}
 
 #define SHARED_FLAGS (GS_SHARED_TEX | GS_SHARED_KM_TEX)
 
-gs_texture_3d::gs_texture_3d(gs_device_t* device, uint32_t width, uint32_t height, uint32_t depth,
-	gs_color_format colorFormat, uint32_t levels, const uint8_t* const* data, uint32_t flags_)
+gs_texture_3d::gs_texture_3d(gs_device_t *device, uint32_t width, uint32_t height, uint32_t depth,
+			     gs_color_format colorFormat, uint32_t levels, const uint8_t *const *data, uint32_t flags_)
 	: gs_texture(device, gs_type::gs_texture_3d, GS_TEXTURE_3D, levels, colorFormat),
-	width(width),
-	height(height),
-	depth(depth),
-	flags(flags_),
-	dxgiFormatResource(ConvertGSTextureFormatResource(format)),
-	dxgiFormatView(ConvertGSTextureFormatView(format)),
-	dxgiFormatViewLinear(ConvertGSTextureFormatViewLinear(format)),
-	isDynamic((flags_& GS_DYNAMIC) != 0),
-	isShared((flags_& SHARED_FLAGS) != 0),
-	genMipmaps((flags_& GS_BUILD_MIPMAPS) != 0),
-	sharedHandle(GS_INVALID_HANDLE)
+	  width(width),
+	  height(height),
+	  depth(depth),
+	  flags(flags_),
+	  dxgiFormatResource(ConvertGSTextureFormatResource(format)),
+	  dxgiFormatView(ConvertGSTextureFormatView(format)),
+	  dxgiFormatViewLinear(ConvertGSTextureFormatViewLinear(format)),
+	  isDynamic((flags_ & GS_DYNAMIC) != 0),
+	  isShared((flags_ & SHARED_FLAGS) != 0),
+	  genMipmaps((flags_ & GS_BUILD_MIPMAPS) != 0),
+	  sharedHandle(GS_INVALID_HANDLE)
 {
 	InitTexture(data);
 	InitResourceView();
 }
 
-gs_texture_3d::gs_texture_3d(gs_device_t* device, uint32_t handle)
+gs_texture_3d::gs_texture_3d(gs_device_t *device, uint32_t handle)
 	: gs_texture(device, gs_type::gs_texture_3d, GS_TEXTURE_3D),
-	isShared(true),
-	sharedHandle(handle)
+	  isShared(true),
+	  sharedHandle(handle)
 {
 	HRESULT hr;
 	hr = device->device->OpenSharedHandle((HANDLE)(uintptr_t)handle, IID_PPV_ARGS(texture.Assign()));

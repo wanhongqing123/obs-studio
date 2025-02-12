@@ -66,7 +66,8 @@ static inline D3D12_FILTER ConvertGSFilter(gs_sample_filter filter)
 
 gs_sampler_state::gs_sampler_state(gs_device_t *device, const gs_sampler_info *info)
 	: gs_obj(device, gs_type::gs_sampler_state),
-	  info(*info) {
+	  info(*info)
+{
 	HRESULT hr;
 	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
 	memset(&descriptorHeapDesc, 0, sizeof(descriptorHeapDesc));
@@ -92,12 +93,8 @@ gs_sampler_state::gs_sampler_state(gs_device_t *device, const gs_sampler_info *i
 	memcpy(sd.BorderColor, v4.ptr, sizeof(v4));
 
 	sampler = samplerDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-        device->device->CreateSampler(&sd, sampler);
-	
+	device->device->CreateSampler(&sd, sampler);
 
 	if (FAILED(hr))
 		throw HRError("Failed to create sampler state", hr);
-
-
-
 }

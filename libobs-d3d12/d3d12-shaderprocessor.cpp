@@ -175,7 +175,8 @@ void ShaderProcessor::BuildParams(std::vector<gs_shader_param> &params)
 		AddParam(parser.params.array[i], params, texCounter);
 }
 
-static inline void AddSampler(gs_device_t *device, shader_sampler &sampler, std::vector<std::unique_ptr<ShaderSampler>> &samplers)
+static inline void AddSampler(gs_device_t *device, shader_sampler &sampler,
+			      std::vector<std::unique_ptr<ShaderSampler>> &samplers)
 {
 	gs_sampler_info si;
 	shader_sampler_convert(&sampler, &si);

@@ -559,6 +559,7 @@ struct gs_zstencil_buffer : gs_obj {
 
 	void InitBuffer();
 	void CreateDerivedViews(ID3D12Device *device, DXGI_FORMAT format);
+	void inline Clear();
 
 	inline void Release() {}
 
@@ -736,12 +737,12 @@ struct gs_pixel_shader : gs_shader {
 struct gs_swap_chain : gs_obj {
 	HWND hwnd;
 	gs_init_data initData;
-	DXGI_SWAP_CHAIN_DESC1 swapDesc = {};
+	DXGI_SWAP_CHAIN_DESC swapDesc = {};
 	gs_color_space space;
 
 	gs_texture_2d target;
 	gs_zstencil_buffer zs;
-	ComPtr<IDXGISwapChain1> swap;
+	ComPtr<IDXGISwapChain> swap;
 	ComPtr<ID3D12CommandQueue> commandQueue;
 	HANDLE hWaitable = NULL;
 
@@ -841,6 +842,106 @@ struct gs_index_buffer : gs_obj {
 	gs_index_buffer(gs_device_t *device, enum gs_index_type type, void *indices, size_t num, uint32_t flags);
 };
 
+
+struct BlendState {
+	bool blendEnabled;
+	gs_blend_type srcFactorC;
+	gs_blend_type destFactorC;
+	gs_blend_type srcFactorA;
+	gs_blend_type destFactorA;
+	gs_blend_op_type op;
+
+	bool redEnabled;
+	bool greenEnabled;
+	bool blueEnabled;
+	bool alphaEnabled;
+
+	inline BlendState()
+		: blendEnabled(true),
+		srcFactorC(GS_BLEND_SRCALPHA),
+		destFactorC(GS_BLEND_INVSRCALPHA),
+		srcFactorA(GS_BLEND_ONE),
+		destFactorA(GS_BLEND_INVSRCALPHA),
+		op(GS_BLEND_OP_ADD),
+		redEnabled(true),
+		greenEnabled(true),
+		blueEnabled(true),
+		alphaEnabled(true)
+	{
+	}
+
+	inline BlendState(const BlendState& state) { memcpy(this, &state, sizeof(BlendState)); }
+};
+
+struct SavedBlendState : BlendState {
+	D3D12_BLEND_DESC bd;
+
+	inline void Release() { }
+
+	inline SavedBlendState(const BlendState& val, D3D12_BLEND_DESC& desc) : BlendState(val), bd(desc) {}
+};
+
+struct StencilSide {
+	gs_depth_test test;
+	gs_stencil_op_type fail;
+	gs_stencil_op_type zfail;
+	gs_stencil_op_type zpass;
+
+	inline StencilSide() : test(GS_ALWAYS), fail(GS_KEEP), zfail(GS_KEEP), zpass(GS_KEEP) {}
+};
+
+struct ZStencilState {
+	bool depthEnabled;
+	bool depthWriteEnabled;
+	gs_depth_test depthFunc;
+
+	bool stencilEnabled;
+	bool stencilWriteEnabled;
+	StencilSide stencilFront;
+	StencilSide stencilBack;
+
+	inline ZStencilState()
+		: depthEnabled(true),
+		depthWriteEnabled(true),
+		depthFunc(GS_LESS),
+		stencilEnabled(false),
+		stencilWriteEnabled(true)
+	{
+	}
+
+	inline ZStencilState(const ZStencilState& state) { memcpy(this, &state, sizeof(ZStencilState)); }
+};
+
+struct SavedZStencilState : ZStencilState {
+	D3D12_DEPTH_STENCIL_DESC dsd;
+
+	inline void Release() {  }
+
+	inline SavedZStencilState(const ZStencilState& val, D3D12_DEPTH_STENCIL_DESC desc)
+		: ZStencilState(val),
+		dsd(desc)
+	{
+	}
+};
+
+struct RasterState {
+	gs_cull_mode cullMode;
+	bool scissorEnabled;
+
+	inline RasterState() : cullMode(GS_BACK), scissorEnabled(false) {}
+
+	inline RasterState(const RasterState& state) { memcpy(this, &state, sizeof(RasterState)); }
+};
+
+struct SavedRasterState : RasterState {
+	D3D12_RASTERIZER_DESC rd;
+
+	inline void Release() { }
+
+	inline SavedRasterState(const RasterState& val, D3D12_RASTERIZER_DESC& desc) : RasterState(val), rd(desc) {}
+};
+
+
 struct gs_monitor_color_info {
 	bool hdr;
 	UINT bits_per_color;
@@ -884,25 +985,55 @@ struct gs_device {
 	bool zstencilStateChanged = true;
 	bool rasterStateChanged = true;
 	bool blendStateChanged = true;
+	ZStencilState zstencilState;
+	RasterState rasterState;
+	BlendState blendState;
+	std::vector<SavedZStencilState> zstencilStates;
+	std::vector<SavedRasterState> rasterStates;
+	std::vector<SavedBlendState> blendStates;
+	ID3D11DepthStencilState *curDepthStencilState = nullptr;
+	ID3D11RasterizerState *curRasterState = nullptr;
+	ID3D11BlendState *curBlendState = nullptr;
+	D3D11_PRIMITIVE_TOPOLOGY curToplogy;
 
+	gs_rect viewport;
+
+	std::vector<mat4float> projStack;
+
+	matrix4 curProjMatrix;
+	matrix4 curViewMatrix;
+	matrix4 curViewProjMatrix;
+
+	std::vector<gs_device_loss> loss_callbacks;
+	gs_obj *first_obj = nullptr;
 	std::vector<std::pair<HMONITOR, gs_monitor_color_info>> monitor_to_hdr;
 
 	void InitFactory();
 	void InitAdapter(uint32_t adapterIdx);
 	void InitDevice(uint32_t adapterIdx);
 
+	ID3D11DepthStencilState *AddZStencilState();
+	ID3D11RasterizerState *AddRasterState();
+	ID3D11BlendState *AddBlendState();
 	void UpdateZStencilState();
 	void UpdateRasterState();
 	void UpdateBlendState();
 
 	void LoadVertexBufferData();
 
+	void CopyTex(ID3D12Resource *dst, uint32_t dst_x, uint32_t dst_y, gs_texture_t *src, uint32_t src_x,
+		     uint32_t src_y, uint32_t src_w, uint32_t src_h);
 	void UpdateViewProjMatrix();
 
 	void FlushOutputViews();
 
+	void RebuildDevice();
+
+	bool HasBadNV12Output();
 	gs_monitor_color_info GetMonitorColorInfo(HMONITOR hMonitor);
 
 	gs_device(uint32_t adapterIdx);
 	~gs_device();
 };
+
+extern "C" EXPORT int device_texture_acquire_sync(gs_texture_t *tex, uint64_t key, uint32_t ms);

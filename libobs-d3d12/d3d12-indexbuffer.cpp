@@ -53,11 +53,9 @@ void gs_index_buffer::InitBuffer()
 
 	if (type == gs_index_type::GS_UNSIGNED_SHORT) {
 		view.Format = DXGI_FORMAT_R16_UINT;
-	}
-	else if (type == gs_index_type::GS_UNSIGNED_LONG) {
+	} else if (type == gs_index_type::GS_UNSIGNED_LONG) {
 		view.Format = DXGI_FORMAT_R32_UINT;
-	}
-	else {
+	} else {
 		view.Format = DXGI_FORMAT_R16_UINT;
 	}
 }

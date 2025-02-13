@@ -212,6 +212,8 @@ void gs_zstencil_buffer::CreateDerivedViews(ID3D12Device *device, DXGI_FORMAT fo
 	}
 }
 
+void inline gs_zstencil_buffer::Clear() {}
+
 gs_zstencil_buffer::gs_zstencil_buffer(gs_device_t *device, uint32_t width, uint32_t height, gs_zstencil_format format)
 	: gs_obj(device, gs_type::gs_zstencil_buffer),
 	  width(width),

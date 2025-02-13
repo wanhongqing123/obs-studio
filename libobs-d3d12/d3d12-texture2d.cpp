@@ -103,9 +103,7 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	td.Width = width;
 	td.Height = height;
 	td.DepthOrArraySize = type == GS_TEXTURE_CUBE ? 6 : 1;
-	;
 	td.MipLevels = genMipmaps ? 0 : levels;
-	;
 	td.Format = twoPlane ? ((format == GS_R16) ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12) : dxgiFormatResource;
 	td.SampleDesc.Count = 1;
 	td.SampleDesc.Quality = 0;

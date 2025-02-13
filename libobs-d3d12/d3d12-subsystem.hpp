@@ -1,5 +1,5 @@
 /******************************************************************************
-    Copyright (C) 2025 by hongqingwan <hongqingwan@obsproject.com>
+    Copyright (C) 2023 by Lain Bailey <lain@obsproject.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -38,6 +38,7 @@
 struct shader_var;
 struct shader_sampler;
 struct gs_vertex_shader;
+struct gs_pipeline_state;
 
 static inline uint32_t GetWinVer()
 {
@@ -595,7 +596,7 @@ struct gs_shader_param {
 	gs_shader_param_type type;
 
 	uint32_t textureID;
-	struct gs_sampler_state *nextSampler = nullptr;
+	struct gs_sampler_state* nextSampler = nullptr;
 
 	int arrayCount;
 
@@ -605,34 +606,35 @@ struct gs_shader_param {
 	std::vector<uint8_t> defaultValue;
 	bool changed;
 
-	gs_shader_param(shader_var &var, uint32_t &texCounter);
+	gs_shader_param(shader_var& var, uint32_t& texCounter);
 };
 
 struct ShaderError {
 	ComPtr<ID3D10Blob> errors;
 	HRESULT hr;
 
-	inline ShaderError(const ComPtr<ID3D10Blob> &errors, HRESULT hr) : errors(errors), hr(hr) {}
+	inline ShaderError(const ComPtr<ID3D10Blob>& errors, HRESULT hr) : errors(errors), hr(hr) {}
 };
 
 struct gs_shader : gs_obj {
 	gs_shader_type type;
 	std::vector<gs_shader_param> params;
-	std::vector<uint8_t> constants;
+	/*ComPtr<ID3D11Buffer> constants;*/
 	size_t constantSize;
 
+	/*D3D11_BUFFER_DESC bd = {};*/
 	std::vector<uint8_t> data;
 
-	inline void UpdateParam(std::vector<uint8_t> &constData, gs_shader_param &param, bool &upload);
+	inline void UpdateParam(std::vector<uint8_t>& constData, gs_shader_param& param, bool& upload);
 	void UploadParams();
 
 	void BuildConstantBuffer();
-	void Compile(const char *shaderStr, const char *file, const char *target, ID3D10Blob **shader);
+	void Compile(const char* shaderStr, const char* file, const char* target, ID3D10Blob** shader);
 
-	inline gs_shader(gs_device_t *device, gs_type obj_type, gs_shader_type type)
+	inline gs_shader(gs_device_t* device, gs_type obj_type, gs_shader_type type)
 		: gs_obj(device, obj_type),
-		  type(type),
-		  constantSize(0)
+		type(type),
+		constantSize(0)
 	{
 	}
 
@@ -643,15 +645,18 @@ struct ShaderSampler {
 	std::string name;
 	gs_sampler_state sampler;
 
-	inline ShaderSampler(const char *name, gs_device_t *device, gs_sampler_info *info)
+	inline ShaderSampler(const char* name, gs_device_t* device, gs_sampler_info* info)
 		: name(name),
-		  sampler(device, info)
+		sampler(device, info)
 	{
 	}
 };
 
 struct gs_vertex_shader : gs_shader {
-	gs_shader_param *world, *viewProj;
+	/*ComPtr<ID3D11VertexShader> shader;
+	ComPtr<ID3D11InputLayout> layout;*/
+
+	gs_shader_param* world, * viewProj;
 
 	std::vector<D3D12_INPUT_ELEMENT_DESC> layoutData;
 
@@ -660,7 +665,14 @@ struct gs_vertex_shader : gs_shader {
 	bool hasTangents;
 	uint32_t nTexUnits;
 
-	inline void Release() {}
+	void Rebuild(ID3D12Device* dev);
+
+	inline void Release()
+	{
+		/*shader.Release();
+		layout.Release();
+		constants.Release();*/
+	}
 
 	inline uint32_t NumBuffersExpected() const
 	{
@@ -675,32 +687,52 @@ struct gs_vertex_shader : gs_shader {
 		return count;
 	}
 
-	void GetBuffersExpected(const std::vector<D3D12_INPUT_ELEMENT_DESC> &inputs);
+	void GetBuffersExpected(const std::vector<D3D12_INPUT_ELEMENT_DESC>& inputs);
 
-	gs_vertex_shader(gs_device_t *device, const char *file, const char *shaderString);
+	gs_vertex_shader(gs_device_t* device, const char* file, const char* shaderString);
+};
+
+struct gs_duplicator : gs_obj {
+	ComPtr<IDXGIOutputDuplication> duplicator;
+	gs_texture_2d* texture;
+	bool hdr = false;
+	enum gs_color_space color_space = GS_CS_SRGB;
+	float sdr_white_nits = 80.f;
+	int idx;
+	long refs;
+	bool updated;
+
+	void Start();
+
+	inline void Release() { duplicator.Release(); }
+
+	gs_duplicator(gs_device_t* device, int monitor_idx);
+	~gs_duplicator();
 };
 
 struct gs_pixel_shader : gs_shader {
+	/*ComPtr<ID3D11PixelShader> shader;*/
 	std::vector<std::unique_ptr<ShaderSampler>> samplers;
+
+	void Rebuild(ID3D12Device* dev);
 
 	inline void Release()
 	{
-		// shader.Release();
-		// constants.Release();
+		//shader.Release();
+		//constants.Release();
 	}
 
-	//inline void GetSamplerStates(ID3D11SamplerState **states)
-	//{
-	//	size_t i;
-	//	for (i = 0; i < samplers.size(); i++)
-	//		states[i] = samplers[i]->sampler.state;
-	//	for (; i < GS_MAX_TEXTURES; i++)
-	//		states[i] = NULL;
-	//}
+	inline void GetSamplerStates(ID3D12DescriptorHeap** states)
+	{
+		size_t i;
+		for (i = 0; i < samplers.size(); i++)
+			states[i] = samplers[i]->sampler.samplerDescriptorHeap;
+		for (; i < GS_MAX_TEXTURES; i++)
+			states[i] = NULL;
+	}
 
-	gs_pixel_shader(gs_device_t *device, const char *file, const char *shaderString);
+	gs_pixel_shader(gs_device_t* device, const char* file, const char* shaderString);
 };
-
 struct gs_swap_chain : gs_obj {
 	HWND hwnd;
 	gs_init_data initData;
@@ -738,6 +770,7 @@ struct gs_pipeline_state {
 	ID3D12RootSignature *root_signature;
 	struct gs_vertex_shader *vertex_shader;
 	struct gs_pixel_shader *pixel_shader;
+	int32_t currentRootIndex;
 
 	gs_pipeline_state(gs_device_t *device, struct gs_vertex_shader *vs, struct gs_pixel_shader *ps);
 };
@@ -794,6 +827,7 @@ struct DataPtr {
 
 struct gs_index_buffer : gs_obj {
 	ComPtr<ID3D12Resource> indexBuffer;
+	D3D12_INDEX_BUFFER_VIEW view;
 	bool dynamic;
 	gs_index_type type;
 	size_t indexSize;

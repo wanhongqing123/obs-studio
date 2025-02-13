@@ -1,5 +1,5 @@
 /******************************************************************************
-    Copyright (C) 2025 by hongqingwan <hongqingwan@obsproject.com>
+    Copyright (C) 2023 by Lain Bailey <lain@obsproject.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ void gs_index_buffer::InitBuffer()
 	props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
 	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	desc.Width = UINT(indexSize * num);
+	desc.Width = indexSize * num;
 	desc.Height = 1;
 	desc.DepthOrArraySize = 1;
 	desc.MipLevels = 1;
@@ -47,6 +47,19 @@ void gs_index_buffer::InitBuffer()
 						     nullptr, IID_PPV_ARGS(indexBuffer.Assign()));
 	if (FAILED(hr))
 		throw HRError("Failed to create buffer", hr);
+
+	view.BufferLocation = indexBuffer->GetGPUVirtualAddress();
+	view.SizeInBytes = indexSize * num;
+
+	if (type == gs_index_type::GS_UNSIGNED_SHORT) {
+		view.Format = DXGI_FORMAT_R16_UINT;
+	}
+	else if (type == gs_index_type::GS_UNSIGNED_LONG) {
+		view.Format = DXGI_FORMAT_R32_UINT;
+	}
+	else {
+		view.Format = DXGI_FORMAT_R16_UINT;
+	}
 }
 
 gs_index_buffer::gs_index_buffer(gs_device_t *device, enum gs_index_type type, void *indices, size_t num,

@@ -158,6 +158,8 @@ void gs_shader::BuildConstantBuffer()
 			size = sizeof(float) * 4 * 4;
 			break;
 		case GS_SHADER_PARAM_TEXTURE:
+			storageTextureCount++;
+			continue;
 		case GS_SHADER_PARAM_STRING:
 		case GS_SHADER_PARAM_UNKNOWN:
 			continue;
@@ -168,8 +170,8 @@ void gs_shader::BuildConstantBuffer()
 
 		/* checks to see if this constant needs to start at a new
 		 * register */
-		if (size && (constantSize & 15) != 0) {
-			size_t alignMax = (constantSize + 15) & ~15;
+		if (size && (constantSize & 31) != 0) {
+			size_t alignMax = (constantSize + 31) & ~31;
 
 			if ((size + constantSize) > alignMax)
 				constantSize = alignMax;
@@ -179,20 +181,9 @@ void gs_shader::BuildConstantBuffer()
 		constantSize += size;
 	}
 
-	memset(&bd, 0, sizeof(bd));
-
-	//if (constantSize) {
-	//	HRESULT hr;
-
-	//	bd.ByteWidth = (constantSize + 15) & 0xFFFFFFF0; /* align */
-	//	bd.Usage = D3D11_USAGE_DYNAMIC;
-	//	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	//	bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-	//	hr = device->device->CreateBuffer(&bd, NULL, constants.Assign());
-	//	if (FAILED(hr))
-	//		throw HRError("Failed to create constant buffer", hr);
-	//}
+	if (constantSize) {
+		uniform32BitBufferCount = ((constantSize + 31) & 0xFFFFFFE0) / 4; /* align */
+	}
 
 	for (size_t i = 0; i < params.size(); i++)
 		gs_shader_set_default(&params[i]);

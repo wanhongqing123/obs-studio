@@ -38,7 +38,10 @@
 struct shader_var;
 struct shader_sampler;
 struct gs_vertex_shader;
+struct gs_pixel_shader;
 struct gs_pipeline_state;
+
+#define MAX_UNIFORM_BUFFERS_PER_STAGE  16
 
 static inline uint32_t GetWinVer()
 {
@@ -392,18 +395,30 @@ struct gs_obj {
 	virtual ~gs_obj();
 };
 
-struct gs_rootsig_parameter {
-	D3D12_ROOT_PARAMETER rootSignatureParam;
-	std::vector<D3D12_DESCRIPTOR_RANGE> desc_ranges;
+struct gs_graphics_rootsignature {
+	ComPtr<ID3D12RootSignature> rootSignature;
 
-	void InitAsConstants(uint32_t register_index, uint32_t numDwords,
-			     D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-	void InitAsConstantBuffer(uint32_t register_index,
-				  D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-	void InitAsBufferSRV(uint32_t register_index, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-	void InitAsBufferUAV(uint32_t register_index, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-	void InitAsDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE type, uint32_t rangeIndex, uint32_t register_index,
-				   uint32_t count, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	int32_t vertexSamplerRootIndex;
+	int32_t vertexSamplerTextureRootIndex;
+	int32_t vertexStorageTextureRootIndex;
+	int32_t vertexStorageBufferRootIndex;
+
+	int32_t vertexUniformBufferRootIndex[MAX_UNIFORM_BUFFERS_PER_STAGE];
+	int32_t vertexUniform32BitBufferIndex;
+
+	int32_t pixelSamplerRootIndex;
+	int32_t pixelSamplerTextureRootIndex;
+	int32_t pixelStorageTextureRootIndex;
+	int32_t pixelStorageBufferRootIndex;
+
+	int32_t pixelUniformBufferRootIndex[MAX_UNIFORM_BUFFERS_PER_STAGE];
+	int32_t pixelUniform32BitBufferIndex;
+
+	gs_vertex_shader* vertexShader;
+	gs_pixel_shader* pixelShader;
+	gs_device* device;
+
+	gs_graphics_rootsignature(gs_device* device, gs_vertex_shader* vertexShader, gs_pixel_shader* pixelShader);
 };
 
 struct gs_upload_buffer : gs_obj {
@@ -620,7 +635,11 @@ struct ShaderError {
 struct gs_shader : gs_obj {
 	gs_shader_type type;
 	std::vector<gs_shader_param> params;
-	/*ComPtr<ID3D11Buffer> constants;*/
+	int32_t samplerCount = 0;
+	int32_t storageTextureCount = 0;
+	int32_t storageBufferCount = 0; // 
+	int32_t uniformBufferCount = 0; // const buffer
+	int32_t uniform32BitBufferCount = 0; // const buffer
 	size_t constantSize;
 
 	/*D3D11_BUFFER_DESC bd = {};*/

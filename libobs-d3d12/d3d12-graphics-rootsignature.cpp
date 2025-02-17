@@ -129,7 +129,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 	for (int32_t i = 0; i < vertexShader->uniformBufferCount; i += 1) {
 		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 		rootParameter.Descriptor.ShaderRegister = i;
-		rootParameter.Descriptor.RegisterSpace = 1;
+		rootParameter.Descriptor.RegisterSpace = 0;
 		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
 		rootParameters[parameterCount] = rootParameter;
 		vertexUniformBufferRootIndex[i] = parameterCount;
@@ -142,6 +142,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		rootParameter.Constants.Num32BitValues = vertexShader->uniform32BitBufferCount;
 		rootParameter.Constants.ShaderRegister = 0;
 		rootParameter.Constants.RegisterSpace = 0;
+		rootParameters[parameterCount] = rootParameter;
 		vertexUniform32BitBufferIndex = parameterCount;
 		parameterCount += 1;
 	}
@@ -151,7 +152,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
 		descriptorRange.NumDescriptors = pixelShader->samplerCount;
 		descriptorRange.BaseShaderRegister = 0;
-		descriptorRange.RegisterSpace = 2;
+		descriptorRange.RegisterSpace = 0;
 		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 		descriptorRanges[rangeCount] = descriptorRange;
 
@@ -167,7 +168,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 		descriptorRange.NumDescriptors = pixelShader->samplerCount;
 		descriptorRange.BaseShaderRegister = 0;
-		descriptorRange.RegisterSpace = 2;
+		descriptorRange.RegisterSpace = 0;
 		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 		descriptorRanges[rangeCount] = descriptorRange;
 
@@ -186,7 +187,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 		descriptorRange.NumDescriptors = pixelShader->storageTextureCount;
 		descriptorRange.BaseShaderRegister = pixelShader->samplerCount;
-		descriptorRange.RegisterSpace = 2;
+		descriptorRange.RegisterSpace = 0;
 		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 		descriptorRanges[rangeCount] = descriptorRange;
 
@@ -205,7 +206,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
 		descriptorRange.NumDescriptors = pixelShader->storageBufferCount;
 		descriptorRange.BaseShaderRegister = pixelShader->samplerCount + pixelShader->storageTextureCount;
-		descriptorRange.RegisterSpace = 2;
+		descriptorRange.RegisterSpace = 0;
 		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 		descriptorRanges[rangeCount] = descriptorRange;
 
@@ -223,7 +224,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 	for (int32_t i = 0; i < pixelShader->uniformBufferCount; i += 1) {
 		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 		rootParameter.Descriptor.ShaderRegister = i;
-		rootParameter.Descriptor.RegisterSpace = 3;
+		rootParameter.Descriptor.RegisterSpace = 0;
 		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 		rootParameters[parameterCount] = rootParameter;
 		pixelUniformBufferRootIndex[i] = parameterCount;
@@ -236,6 +237,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		rootParameter.Constants.Num32BitValues = pixelShader->uniform32BitBufferCount;
 		rootParameter.Constants.ShaderRegister = 0;
 		rootParameter.Constants.RegisterSpace = 0;
+		rootParameters[parameterCount] = rootParameter;
 		pixelUniform32BitBufferIndex = parameterCount;
 		parameterCount += 1;
 	}

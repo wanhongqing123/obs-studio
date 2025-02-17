@@ -95,6 +95,9 @@ gs_pixel_shader::gs_pixel_shader(gs_device_t* device, const char* file, const ch
 	processor.BuildString(outputString);
 	processor.BuildParams(params);
 	processor.BuildSamplers(samplers);
+
+	samplerCount = samplers.size();
+
 	BuildConstantBuffer();
 
 	Compile(outputString.c_str(), file, "ps_5_0", shaderBlob.Assign());
@@ -325,11 +328,12 @@ inline void gs_shader::UpdateParam(gs_graphics_rootsignature* root_sig, std::vec
 		else
 			device_load_texture(device, shader_tex.tex, param.textureID);
 
-		//if (param.nextSampler) {
-		//	ID3D12DescriptorHeap* state = param.nextSampler->samplerDescriptorHeap;
-		//	device->context->PSSetSamplers(param.textureID, 1, &state);
-		//	param.nextSampler = nullptr;
-		//}
+		if (param.nextSampler) {
+			gs_staging_descriptor* state = param.nextSampler->samplerDescriptor;
+			// device->commandList->SetComputeRootShaderResourceView
+
+			param.nextSampler = nullptr;
+		}
 	}
 }
 

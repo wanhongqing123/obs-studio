@@ -158,7 +158,6 @@ void gs_shader::BuildConstantBuffer()
 			size = sizeof(float) * 4 * 4;
 			break;
 		case GS_SHADER_PARAM_TEXTURE:
-			storageTextureCount++;
 			continue;
 		case GS_SHADER_PARAM_STRING:
 		case GS_SHADER_PARAM_UNKNOWN:
@@ -296,7 +295,7 @@ void gs_shader::Compile(const char* shaderString, const char* file, const char* 
 #endif
 }
 
-inline void gs_shader::UpdateParam(std::vector<uint8_t>& constData, gs_shader_param& param, bool& upload)
+inline void gs_shader::UpdateParam(gs_graphics_rootsignature* root_sig, std::vector<uint8_t>& constData, gs_shader_param& param, bool& upload)
 {
 	if (param.type != GS_SHADER_PARAM_TEXTURE) {
 		if (!param.curValue.size())
@@ -334,7 +333,7 @@ inline void gs_shader::UpdateParam(std::vector<uint8_t>& constData, gs_shader_pa
 	}
 }
 
-void gs_shader::UploadParams()
+void gs_shader::UploadParams(gs_graphics_rootsignature* root_sig)
 {
 	std::vector<uint8_t> constData;
 	bool upload = false;
@@ -342,22 +341,22 @@ void gs_shader::UploadParams()
 	constData.reserve(constantSize);
 
 	for (size_t i = 0; i < params.size(); i++)
-		UpdateParam(constData, params[i], upload);
+		UpdateParam(root_sig, constData, params[i], upload);
 
 	if (constData.size() != constantSize)
 		throw "Invalid constant data size given to shader";
 
-	//if (upload) {
-	//	D3D11_MAPPED_SUBRESOURCE map;
-	//	HRESULT hr;
+	if (upload) {
+		if (type == GS_SHADER_VERTEX) {
+			device->commandList->SetGraphicsRoot32BitConstants(
+				root_sig->vertexUniform32BitBufferIndex, uniform32BitBufferCount, constData.data(), 0);
+		}
 
-	//	hr = device->context->Map(constants, 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
-	//	if (FAILED(hr))
-	//		throw HRError("Could not lock constant buffer", hr);
-
-	//	memcpy(map.pData, constData.data(), constData.size());
-	//	device->context->Unmap(constants, 0);
-	//}
+		if (type == GS_SHADER_VERTEX) {
+			device->commandList->SetGraphicsRoot32BitConstants(
+				root_sig->pixelUniform32BitBufferIndex, uniform32BitBufferCount, constData.data(), 0);
+		}
+	}
 }
 
 void gs_shader_destroy(gs_shader_t* shader)

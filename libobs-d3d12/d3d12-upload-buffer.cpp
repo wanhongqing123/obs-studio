@@ -15,37 +15,26 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
-#include <util/base.h>
 #include "d3d12-subsystem.hpp"
 
-gs_upload_buffer::gs_upload_buffer(gs_device *device, size_t size)
+gs_upload_buffer::gs_upload_buffer(gs_device* device, const D3D12_RESOURCE_DESC& textureDesc_)
 	: gs_obj(device, gs_type::gs_upload_buffer),
-	  buffer_size(size)
+	textureDesc(textureDesc_)
 {
-	D3D12_HEAP_PROPERTIES HeapProps;
-	HeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
-	HeapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	HeapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-	HeapProps.CreationNodeMask = 1;
-	HeapProps.VisibleNodeMask = 1;
+	D3D12_RESOURCE_DESC uploadDesc; 
+	memset(&uploadDesc, 0, sizeof(uploadDesc));
 
-	// Upload buffers must be 1-dimensional
-	D3D12_RESOURCE_DESC ResourceDesc = {};
-	ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	ResourceDesc.Width = buffer_size;
-	ResourceDesc.Height = 1;
-	ResourceDesc.DepthOrArraySize = 1;
-	ResourceDesc.MipLevels = 1;
-	ResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
-	ResourceDesc.SampleDesc.Count = 1;
-	ResourceDesc.SampleDesc.Quality = 0;
-	ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	uploadDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	uploadDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+	uploadDesc.Height = 1;
+	uploadDesc.DepthOrArraySize = 1;
+	uploadDesc.MipLevels = 1;
+	uploadDesc.Format = DXGI_FORMAT_UNKNOWN;
+	uploadDesc.SampleDesc.Count = 1;
+	uploadDesc.SampleDesc.Quality = 0;
+	uploadDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	uploadDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-	HRESULT hr = device->device->CreateCommittedResource(&HeapProps, D3D12_HEAP_FLAG_NONE, &ResourceDesc,
-							     D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-							     IID_PPV_ARGS(&resource));
-
-	if (FAILED(hr))
-		throw HRError("Failed to create upload buffer", hr);
+	// Figure out how much we need to allocate for the upload buffer
+	device->device->GetCopyableFootprints(&textureDesc, 0, 1, 0, NULL, NULL, NULL, &uploadDesc.Width);
 }

@@ -69,16 +69,12 @@ gs_sampler_state::gs_sampler_state(gs_device_t *device, const gs_sampler_info *i
 	  info(*info)
 {
 	HRESULT hr;
-	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
-	memset(&descriptorHeapDesc, 0, sizeof(descriptorHeapDesc));
-	descriptorHeapDesc.NumDescriptors = 1;
-	descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
-	descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	hr = device->device->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&samplerDescriptorHeap));
-	if (FAILED(hr))
-		throw HRError("Failed to create sampler heap", hr);
+
+	samplerDescriptor = (gs_staging_descriptor*)bmalloc(sizeof(samplerDescriptor));
+	device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, samplerDescriptor);
 
 	vec4 v4;
+	D3D12_SAMPLER_DESC sd;
 
 	memset(&sd, 0, sizeof(sd));
 	sd.AddressU = ConvertGSAddressMode(info->address_u);
@@ -92,9 +88,5 @@ gs_sampler_state::gs_sampler_state(gs_device_t *device, const gs_sampler_info *i
 	vec4_from_rgba(&v4, info->border_color);
 	memcpy(sd.BorderColor, v4.ptr, sizeof(v4));
 
-	sampler = samplerDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	device->device->CreateSampler(&sd, sampler);
-
-	if (FAILED(hr))
-		throw HRError("Failed to create sampler state", hr);
+	device->device->CreateSampler(&sd, samplerDescriptor->cpuHandle);
 }

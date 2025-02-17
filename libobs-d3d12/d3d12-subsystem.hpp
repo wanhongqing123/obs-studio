@@ -40,6 +40,8 @@ struct shader_sampler;
 struct gs_vertex_shader;
 struct gs_pixel_shader;
 struct gs_pipeline_state;
+struct gs_staging_descriptor_pool;
+struct gs_staging_descriptor;
 
 #define MAX_UNIFORM_BUFFERS_PER_STAGE  16
 
@@ -327,38 +329,6 @@ static inline D3D12_PRIMITIVE_TOPOLOGY ConvertGSTopology(gs_draw_mode mode)
 	return D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
 }
 
-static inline D3D12_GPU_DESCRIPTOR_HANDLE D3D12_CPUtoGPUHandle(ID3D12DescriptorHeap *heap,
-							       D3D12_CPU_DESCRIPTOR_HANDLE CPUHandle)
-{
-	D3D12_CPU_DESCRIPTOR_HANDLE CPUHeapStart;
-	D3D12_GPU_DESCRIPTOR_HANDLE GPUHandle;
-	SIZE_T offset;
-
-	// Calculate the correct offset into the heap
-	CPUHeapStart = heap->GetCPUDescriptorHandleForHeapStart();
-	offset = CPUHandle.ptr - CPUHeapStart.ptr;
-
-	GPUHandle = heap->GetGPUDescriptorHandleForHeapStart();
-	GPUHandle.ptr += offset;
-
-	return GPUHandle;
-}
-
-static inline ID3D12DescriptorHeap *CreateDescriptorHeap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type)
-{
-	D3D12_DESCRIPTOR_HEAP_DESC Desc;
-	Desc.Type = type;
-	Desc.NumDescriptors = 1;
-	Desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	Desc.NodeMask = 1;
-
-	ID3D12DescriptorHeap *pHeap;
-	HRESULT hr = device->CreateDescriptorHeap(&Desc, IID_PPV_ARGS(&pHeap));
-	if (FAILED(hr))
-		throw HRError("Failed to create desc heap", hr);
-	return pHeap;
-}
-
 struct VBDataPtr {
 	gs_vb_data *data;
 
@@ -414,20 +384,61 @@ struct gs_graphics_rootsignature {
 	int32_t pixelUniformBufferRootIndex[MAX_UNIFORM_BUFFERS_PER_STAGE];
 	int32_t pixelUniform32BitBufferIndex;
 
-	gs_vertex_shader* vertexShader;
-	gs_pixel_shader* pixelShader;
-	gs_device* device;
-
 	gs_graphics_rootsignature(gs_device* device, gs_vertex_shader* vertexShader, gs_pixel_shader* pixelShader);
 };
 
+struct gs_staging_descriptor_heap {
+	ID3D12DescriptorHeap* handle;
+	D3D12_DESCRIPTOR_HEAP_TYPE heapType;
+	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart;
+	int32_t maxDescriptors;
+	int32_t descriptorSize;
+};
+
+struct gs_gpu_descriptor_heap {
+	ID3D12DescriptorHeap* handle;
+	D3D12_DESCRIPTOR_HEAP_TYPE heapType;
+	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart;
+	D3D12_GPU_DESCRIPTOR_HANDLE descriptorHeapGPUStart;
+	int32_t maxDescriptors;
+	int32_t descriptorSize;
+	int32_t currentDescriptorIndex;
+};
+
+struct gs_staging_descriptor {
+	gs_staging_descriptor_pool* pool;
+	gs_staging_descriptor_heap* heap;
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
+	int32_t cpuHandleIndex;
+};
+
+struct gs_staging_descriptor_pool {
+	int32_t heapCount;
+	gs_staging_descriptor_heap** heaps;
+	int32_t descriptorCapacity;
+	int32_t freeDescriptorCount;
+	gs_staging_descriptor* freeDescriptors;
+};
+
+struct gs_gpu_descriptor_heap_pool {
+	int32_t capacity;
+	int32_t count;
+	gs_gpu_descriptor_heap** heap;
+};
+
+gs_staging_descriptor_pool *staging_descriptor_pool_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type);
+
+void gs_expand_staging_descriptor_pool(ID3D12Device *device, gs_staging_descriptor_pool *pool);
+
+void gs_staging_descriptor_pool_destroy(gs_staging_descriptor_pool *pool);
+
 struct gs_upload_buffer : gs_obj {
 	ComPtr<ID3D12Resource> resource;
+	D3D12_RESOURCE_DESC textureDesc;
 	D3D12_RANGE range;
-	size_t buffer_size;
 
-	gs_upload_buffer(gs_device *device, size_t buffer_size);
-	void Map();
+	gs_upload_buffer(gs_device *device, const D3D12_RESOURCE_DESC& textureDesc);
+	void Map(uint8_t** ptr, uint32_t* linesize);
 	void Unmap();
 };
 
@@ -462,15 +473,12 @@ struct gs_texture : gs_obj {
 struct gs_texture_2d : gs_texture {
 	gs_upload_buffer *upload_buffer;
 
-	ComPtr<ID3D12DescriptorHeap> textureDescriptorHeap;
+	gs_staging_descriptor textureDescriptor;
 	ComPtr<ID3D12Resource> texture;
-	D3D12_CPU_DESCRIPTOR_HANDLE textureResourceView;
 
-	ComPtr<ID3D12DescriptorHeap> renderTargetDescriptorHeap;
-	D3D12_CPU_DESCRIPTOR_HANDLE renderTargetView[6];
+	gs_staging_descriptor renderTargetDescriptor[6];
 
-	ComPtr<ID3D12DescriptorHeap> renderTargetLinearDescriptorHeap;
-	D3D12_CPU_DESCRIPTOR_HANDLE renderTargetLinearView[6];
+	gs_staging_descriptor renderTargetLinearDescriptor[6];
 
 	ComPtr<IDXGISurface1> gdiSurface;
 
@@ -554,27 +562,14 @@ struct gs_texture_3d : gs_texture {
 
 struct gs_zstencil_buffer : gs_obj {
 	ComPtr<ID3D12Resource> texture;
+	gs_staging_descriptor textureDescriptor;
 
 	uint32_t width, height;
 	gs_zstencil_format format;
 	DXGI_FORMAT dxgiFormat;
 
-	D3D12_RESOURCE_DESC td = {};
-	D3D12_CLEAR_VALUE clearValue;
-	D3D12_HEAP_PROPERTIES headProp = {};
-
-	D3D12_CPU_DESCRIPTOR_HANDLE hDSV[4];
-	ID3D12DescriptorHeap *dsvDescHeap[4];
-
-	D3D12_CPU_DESCRIPTOR_HANDLE hDepthSRV;
-	ID3D12DescriptorHeap *depthSRVHeap;
-
-	D3D12_CPU_DESCRIPTOR_HANDLE hStencilSRV;
-	ID3D12DescriptorHeap *stencilSRVHeap;
-
 	void InitBuffer();
-	void CreateDerivedViews(ID3D12Device *device, DXGI_FORMAT format);
-	void inline Clear();
+	void inline Clear() {}
 
 	inline void Release() {}
 
@@ -599,10 +594,12 @@ struct gs_stage_surface : gs_obj {
 
 struct gs_sampler_state : gs_obj {
 	gs_sampler_info info;
-	ID3D12DescriptorHeap *samplerDescriptorHeap;
-	D3D12_CPU_DESCRIPTOR_HANDLE sampler;
-	D3D12_SAMPLER_DESC sd = {};
-	inline void Release() {}
+	gs_staging_descriptor* samplerDescriptor;
+
+	inline void Release() {
+		if (samplerDescriptor)
+			bfree(samplerDescriptor);
+	}
 
 	gs_sampler_state(gs_device_t *device, const gs_sampler_info *info);
 };
@@ -635,6 +632,7 @@ struct ShaderError {
 struct gs_shader : gs_obj {
 	gs_shader_type type;
 	std::vector<gs_shader_param> params;
+
 	int32_t samplerCount = 0;
 	int32_t storageTextureCount = 0;
 	int32_t storageBufferCount = 0; // 
@@ -642,11 +640,11 @@ struct gs_shader : gs_obj {
 	int32_t uniform32BitBufferCount = 0; // const buffer
 	size_t constantSize;
 
-	/*D3D11_BUFFER_DESC bd = {};*/
 	std::vector<uint8_t> data;
 
-	inline void UpdateParam(std::vector<uint8_t>& constData, gs_shader_param& param, bool& upload);
-	void UploadParams();
+	inline void UpdateParam(gs_graphics_rootsignature *root_sig, std::vector<uint8_t> &constData,
+				gs_shader_param &param, bool &upload);
+	void UploadParams(gs_graphics_rootsignature *root_sig);
 
 	void BuildConstantBuffer();
 	void Compile(const char* shaderStr, const char* file, const char* target, ID3D10Blob** shader);
@@ -742,13 +740,13 @@ struct gs_pixel_shader : gs_shader {
 		//constants.Release();
 	}
 
-	inline void GetSamplerStates(ID3D12DescriptorHeap** states)
+	inline void GetSamplerDescriptor(gs_staging_descriptor** descriptor)
 	{
 		size_t i;
 		for (i = 0; i < samplers.size(); i++)
-			states[i] = samplers[i]->sampler.samplerDescriptorHeap;
+			descriptor[i] = samplers[i]->sampler.samplerDescriptor;
 		for (; i < GS_MAX_TEXTURES; i++)
-			states[i] = NULL;
+			descriptor[i] = NULL;
 	}
 
 	gs_pixel_shader(gs_device_t* device, const char* file, const char* shaderString);
@@ -785,15 +783,18 @@ struct gs_swap_chain : gs_obj {
 	virtual ~gs_swap_chain();
 };
 
-struct gs_pipeline_state {
+struct gs_graphics_pipeline {
 	ID3D12PipelineState *pipeline_state;
-	ID3D12RootSignature *root_signature;
-	struct gs_vertex_shader *vertex_shader;
-	struct gs_pixel_shader *pixel_shader;
-	int32_t currentRootIndex;
+	gs_graphics_rootsignature* rootSignature;
 
-	gs_pipeline_state(gs_device_t *device, struct gs_vertex_shader *vs, struct gs_pixel_shader *ps);
+	struct gs_vertex_shader* vertex_shader;
+	struct gs_pixel_shader* pixel_shader;
+
+	float blendConstants[4];
+	uint8_t stencilRef;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
 };
+
 
 struct gs_vertex_buffer : gs_obj {
 	ComPtr<ID3D12Resource> vertexBuffer;
@@ -892,14 +893,6 @@ struct BlendState {
 	inline BlendState(const BlendState& state) { memcpy(this, &state, sizeof(BlendState)); }
 };
 
-struct SavedBlendState : BlendState {
-	D3D12_BLEND_DESC bd;
-
-	inline void Release() { }
-
-	inline SavedBlendState(const BlendState& val, D3D12_BLEND_DESC& desc) : BlendState(val), bd(desc) {}
-};
-
 struct StencilSide {
 	gs_depth_test test;
 	gs_stencil_op_type fail;
@@ -931,18 +924,6 @@ struct ZStencilState {
 	inline ZStencilState(const ZStencilState& state) { memcpy(this, &state, sizeof(ZStencilState)); }
 };
 
-struct SavedZStencilState : ZStencilState {
-	D3D12_DEPTH_STENCIL_DESC dsd;
-
-	inline void Release() {  }
-
-	inline SavedZStencilState(const ZStencilState& val, D3D12_DEPTH_STENCIL_DESC desc)
-		: ZStencilState(val),
-		dsd(desc)
-	{
-	}
-};
-
 struct RasterState {
 	gs_cull_mode cullMode;
 	bool scissorEnabled;
@@ -952,14 +933,9 @@ struct RasterState {
 	inline RasterState(const RasterState& state) { memcpy(this, &state, sizeof(RasterState)); }
 };
 
-struct SavedRasterState : RasterState {
-	D3D12_RASTERIZER_DESC rd;
-
-	inline void Release() { }
-
-	inline SavedRasterState(const RasterState& val, D3D12_RASTERIZER_DESC& desc) : RasterState(val), rd(desc) {}
+struct mat4float {
+	float mat[16];
 };
-
 
 struct gs_monitor_color_info {
 	bool hdr;
@@ -990,6 +966,9 @@ struct gs_device {
 	enum gs_color_space curColorSpace = GS_CS_SRGB;
 	bool curFramebufferSrgb = false;
 	bool curFramebufferInvalidate = false;
+
+	gs_staging_descriptor_pool* stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
+
 	gs_texture *curTextures[GS_MAX_TEXTURES];
 	gs_sampler_state *curSamplers[GS_MAX_TEXTURES];
 	gs_vertex_buffer *curVertexBuffer = nullptr;
@@ -1004,16 +983,14 @@ struct gs_device {
 	bool zstencilStateChanged = true;
 	bool rasterStateChanged = true;
 	bool blendStateChanged = true;
+
 	ZStencilState zstencilState;
 	RasterState rasterState;
 	BlendState blendState;
-	std::vector<SavedZStencilState> zstencilStates;
-	std::vector<SavedRasterState> rasterStates;
-	std::vector<SavedBlendState> blendStates;
-	ID3D11DepthStencilState *curDepthStencilState = nullptr;
-	ID3D11RasterizerState *curRasterState = nullptr;
-	ID3D11BlendState *curBlendState = nullptr;
-	D3D11_PRIMITIVE_TOPOLOGY curToplogy;
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC currentPSODesc;
+	D3D12_PRIMITIVE_TOPOLOGY curToplogy;
+	gs_graphics_pipeline* currentPipeline;
 
 	gs_rect viewport;
 
@@ -1031,9 +1008,8 @@ struct gs_device {
 	void InitAdapter(uint32_t adapterIdx);
 	void InitDevice(uint32_t adapterIdx);
 
-	ID3D11DepthStencilState *AddZStencilState();
-	ID3D11RasterizerState *AddRasterState();
-	ID3D11BlendState *AddBlendState();
+	void AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE heapType, gs_staging_descriptor* cpuDescripotr);
+
 	void UpdateZStencilState();
 	void UpdateRasterState();
 	void UpdateBlendState();

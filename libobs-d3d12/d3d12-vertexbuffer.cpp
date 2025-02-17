@@ -82,7 +82,7 @@ void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVert
 	memset(&desc, 0, sizeof(D3D12_RESOURCE_DESC));
 	memset(&props, 0, sizeof(D3D12_HEAP_PROPERTIES));
 
-	props.Type = dynamic ? D3D12_HEAP_TYPE_UPLOAD : D3D12_HEAP_TYPE_DEFAULT;
+	props.Type = D3D12_HEAP_TYPE_UPLOAD;
 	props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 

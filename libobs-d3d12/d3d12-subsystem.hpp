@@ -432,6 +432,8 @@ void gs_expand_staging_descriptor_pool(ID3D12Device *device, gs_staging_descript
 
 void gs_staging_descriptor_pool_destroy(gs_staging_descriptor_pool *pool);
 
+void gs_release_staging_descriptor(gs_staging_descriptor* cpuDescriptor);
+
 struct gs_upload_buffer : gs_obj {
 	ComPtr<ID3D12Resource> resource;
 	D3D12_RESOURCE_DESC textureDesc;
@@ -569,11 +571,13 @@ struct gs_zstencil_buffer : gs_obj {
 	DXGI_FORMAT dxgiFormat;
 
 	void InitBuffer();
-	void inline Clear() {}
+
+	void inline Clear() {
+		texture.Clear();
+		gs_release_staging_descriptor(&textureDescriptor);
+	}
 
 	inline void Release() {}
-
-	inline gs_zstencil_buffer() : width(0), height(0), dxgiFormat(DXGI_FORMAT_UNKNOWN) {}
 
 	gs_zstencil_buffer(gs_device_t *device, uint32_t width, uint32_t height, gs_zstencil_format format);
 };

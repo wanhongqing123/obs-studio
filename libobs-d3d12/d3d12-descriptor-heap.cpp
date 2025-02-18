@@ -19,7 +19,7 @@
 
 #define STAGING_HEAP_DESCRIPTOR_COUNT 1024
 
-static gs_staging_descriptor_heap *staging_descriptor_heap_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type,
+static gs_staging_descriptor_heap *gs_staging_descriptor_heap_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type,
 							   int32_t descriptorCount)
 {
 	gs_staging_descriptor_heap *heap;
@@ -28,13 +28,15 @@ static gs_staging_descriptor_heap *staging_descriptor_heap_create(ID3D12Device *
 	HRESULT hr;
 
 	heap = (gs_staging_descriptor_heap *)bmalloc(1 * sizeof(gs_staging_descriptor_heap));
+	memset(heap, 0, sizeof(gs_staging_descriptor_heap));
+
 	if (!heap) {
 		return NULL;
 	}
 
+	memset(&heapDesc, 0, sizeof(heapDesc));
 	heapDesc.NumDescriptors = descriptorCount;
 	heapDesc.Type = type;
-	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	heapDesc.NodeMask = 0;
 
 	hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&handle));
@@ -43,14 +45,13 @@ static gs_staging_descriptor_heap *staging_descriptor_heap_create(ID3D12Device *
 
 	heap->handle = handle;
 	heap->heapType = type;
-	heap->maxDescriptors = descriptorCount;
 	heap->descriptorSize = device->GetDescriptorHandleIncrementSize(type);
 	heap->descriptorHeapCPUStart = handle->GetCPUDescriptorHandleForHeapStart();
 
 	return heap;
 }
 
-static gs_gpu_descriptor_heap *gpu_descriptor_heap_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type,
+static gs_gpu_descriptor_heap *gs_gpu_descriptor_heap_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type,
 						   int32_t descriptorCount)
 {
 	gs_gpu_descriptor_heap *heap;
@@ -59,10 +60,13 @@ static gs_gpu_descriptor_heap *gpu_descriptor_heap_create(ID3D12Device *device, 
 	HRESULT hr;
 
 	heap = (gs_gpu_descriptor_heap *)bmalloc(1 * sizeof(gs_gpu_descriptor_heap));
+	memset(heap, 0, sizeof(gs_gpu_descriptor_heap));
+
 	if (!heap) {
 		return NULL;
 	}
 
+	memset(&heapDesc, 0, sizeof(heapDesc));
 	heapDesc.NumDescriptors = descriptorCount;
 	heapDesc.Type = type;
 	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
@@ -76,20 +80,23 @@ static gs_gpu_descriptor_heap *gpu_descriptor_heap_create(ID3D12Device *device, 
 	heap->heapType = type;
 	heap->maxDescriptors = descriptorCount;
 	heap->descriptorSize = device->GetDescriptorHandleIncrementSize(type);
-	heap->descriptorHeapCPUStart = handle->GetCPUDescriptorHandleForHeapStart();
 	heap->descriptorHeapGPUStart = handle->GetGPUDescriptorHandleForHeapStart();
+	heap->descriptorHeapCPUStart = handle->GetCPUDescriptorHandleForHeapStart();
 
 	return heap;
 }
 
-gs_staging_descriptor_pool *staging_descriptor_pool_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type)
+gs_staging_descriptor_pool *gs_staging_descriptor_pool_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type)
 {
-	gs_staging_descriptor_heap *heap = staging_descriptor_heap_create(device, type, STAGING_HEAP_DESCRIPTOR_COUNT);
+	gs_staging_descriptor_heap *heap = gs_staging_descriptor_heap_create(device, type, STAGING_HEAP_DESCRIPTOR_COUNT);
 
 	gs_staging_descriptor_pool *pool = (gs_staging_descriptor_pool *)bmalloc(sizeof(gs_staging_descriptor_pool));
+	memset(pool, 0, sizeof(gs_staging_descriptor_pool));
 
 	pool->heapCount = 1;
 	pool->heaps = (gs_staging_descriptor_heap **)bmalloc(sizeof(gs_staging_descriptor_heap *));
+	memset(pool->heaps, 0, sizeof(gs_staging_descriptor_heap*));
+
 	pool->heaps[0] = heap;
 
 	pool->descriptorCapacity = STAGING_HEAP_DESCRIPTOR_COUNT;
@@ -108,6 +115,16 @@ gs_staging_descriptor_pool *staging_descriptor_pool_create(ID3D12Device *device,
 }
 
 static void gs_staging_descriptor_heap_destroy(gs_staging_descriptor_heap* heap) {
+	if (!heap)
+		return;
+
+	if (heap->handle)
+		heap->handle->Release();
+
+	bfree(heap);
+}
+
+static void gs_gpu_descriptor_heap_destroy(gs_gpu_descriptor_heap* heap) {
 	if (!heap)
 		return;
 
@@ -136,7 +153,7 @@ void gs_staging_descriptor_pool_destroy(gs_staging_descriptor_pool* pool) {
 void gs_expand_staging_descriptor_pool(ID3D12Device *device, gs_staging_descriptor_pool *pool)
 {
 	gs_staging_descriptor_heap *heap =
-		staging_descriptor_heap_create(device, pool->heaps[0]->heapType, STAGING_HEAP_DESCRIPTOR_COUNT);
+		gs_staging_descriptor_heap_create(device, pool->heaps[0]->heapType, STAGING_HEAP_DESCRIPTOR_COUNT);
 
 	pool->heapCount += 1;
 	pool->heaps = (gs_staging_descriptor_heap **)brealloc(pool->heaps,
@@ -156,7 +173,7 @@ void gs_expand_staging_descriptor_pool(ID3D12Device *device, gs_staging_descript
 	}
 }
 
-void gs_release_staging_descriptor(gs_staging_descriptor* cpuDescriptor) {
+void gs_staging_descriptor_release(gs_staging_descriptor* cpuDescriptor) {
 	gs_staging_descriptor_pool* pool = cpuDescriptor->pool;
 
 	if (!pool)
@@ -165,3 +182,72 @@ void gs_release_staging_descriptor(gs_staging_descriptor* cpuDescriptor) {
 	memcpy(&pool->freeDescriptors[pool->freeDescriptorCount], cpuDescriptor, sizeof(gs_staging_descriptor));
 	pool->freeDescriptorCount += 1;
 }
+
+gs_gpu_descriptor_heap_pool* gpu_descriptor_heap_pool_create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type) {
+	gs_gpu_descriptor_heap_pool* pool = (gs_gpu_descriptor_heap_pool* )bmalloc(sizeof(gs_gpu_descriptor_heap_pool));
+	memset(pool, 0, sizeof(gs_gpu_descriptor_heap_pool));
+
+	pool->capacity = 4;
+	pool->count = 4;
+
+	pool->heaps = (gs_gpu_descriptor_heap**)bmalloc(pool->capacity * sizeof(gs_gpu_descriptor_heap*));
+	memset(pool->heaps, 0, pool->capacity * sizeof(gs_gpu_descriptor_heap*));
+
+	for (int32_t i = 0; i < pool->capacity; ++i) {
+		pool->heaps[i] = gs_gpu_descriptor_heap_create(
+			device, type, type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV ? 65536 : 2048);
+		pool->heaps[i]->pool = pool;
+	}
+	
+
+	return pool;
+}
+
+void gpu_descriptor_heap_pool_destroy(gs_gpu_descriptor_heap_pool* pool) {
+	if (!pool)
+		return;
+
+	for (int32_t i = 0; i < pool->capacity; ++i) 
+		gs_gpu_descriptor_heap_destroy(pool->heaps[i]);
+
+	bfree(pool->heaps);
+	bfree(pool);
+}
+
+gs_gpu_descriptor_heap* gs_acquire_gpu_descriptor_heap(ID3D12Device* device, gs_gpu_descriptor_heap_pool* pool, D3D12_DESCRIPTOR_HEAP_TYPE type)
+{
+	gs_gpu_descriptor_heap* result;
+	if (pool->count > 0) {
+		result = pool->heaps[pool->count - 1];
+		pool->count -= 1;
+	}
+	else {
+		result = gs_gpu_descriptor_heap_create(device,
+			type,
+			type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV ? 65536 : 2048);
+		result->pool = pool;
+	}
+
+	return result;
+}
+
+
+void gs_gpu_descriptor_heap_release(gs_gpu_descriptor_heap *heap)
+{
+	gs_gpu_descriptor_heap_pool *pool = heap->pool;
+	if (!pool)
+		return;
+
+	heap->currentDescriptorIndex = 0;
+
+	if (pool->count >= pool->capacity) {
+		pool->capacity *= 2;
+		pool->heaps = (gs_gpu_descriptor_heap **)brealloc(pool->heaps,
+								  pool->capacity * sizeof(gs_gpu_descriptor_heap *));
+	}
+
+	pool->heaps[pool->count] = heap;
+	pool->count += 1;
+}
+
+

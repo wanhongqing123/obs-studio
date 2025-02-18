@@ -27,7 +27,7 @@
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
-
+#include <dxgidebug.h>
 #include <util/base.h>
 #include <graphics/matrix4.h>
 #include <graphics/graphics.h>
@@ -42,6 +42,7 @@ struct gs_pixel_shader;
 struct gs_pipeline_state;
 struct gs_staging_descriptor_pool;
 struct gs_staging_descriptor;
+struct gs_gpu_descriptor_heap_pool;
 
 #define MAX_UNIFORM_BUFFERS_PER_STAGE  16
 
@@ -368,71 +369,69 @@ struct gs_obj {
 struct gs_graphics_rootsignature {
 	ComPtr<ID3D12RootSignature> rootSignature;
 
-	int32_t vertexSamplerRootIndex;
-	int32_t vertexSamplerTextureRootIndex;
-	int32_t vertexStorageTextureRootIndex;
-	int32_t vertexStorageBufferRootIndex;
+	int32_t vertexUniform32BitBufferRootIndex = -1;
 
-	int32_t vertexUniformBufferRootIndex[MAX_UNIFORM_BUFFERS_PER_STAGE];
-	int32_t vertexUniform32BitBufferIndex;
-
-	int32_t pixelSamplerRootIndex;
-	int32_t pixelSamplerTextureRootIndex;
-	int32_t pixelStorageTextureRootIndex;
-	int32_t pixelStorageBufferRootIndex;
-
-	int32_t pixelUniformBufferRootIndex[MAX_UNIFORM_BUFFERS_PER_STAGE];
-	int32_t pixelUniform32BitBufferIndex;
+	int32_t pixelSamplerRootIndex = -1;
+	int32_t pixelTextureRootIndex = -1;
+	int32_t pixelUniform32BitBufferRootIndex = -1;
 
 	gs_graphics_rootsignature(gs_device* device, gs_vertex_shader* vertexShader, gs_pixel_shader* pixelShader);
 };
 
 struct gs_staging_descriptor_heap {
-	ID3D12DescriptorHeap* handle;
-	D3D12_DESCRIPTOR_HEAP_TYPE heapType;
-	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart;
-	int32_t maxDescriptors;
-	int32_t descriptorSize;
+	ID3D12DescriptorHeap* handle = nullptr;
+	D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart = { 0 };
+	int32_t descriptorSize = 0;
 };
 
 struct gs_gpu_descriptor_heap {
-	ID3D12DescriptorHeap* handle;
-	D3D12_DESCRIPTOR_HEAP_TYPE heapType;
-	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart;
-	D3D12_GPU_DESCRIPTOR_HANDLE descriptorHeapGPUStart;
-	int32_t maxDescriptors;
-	int32_t descriptorSize;
-	int32_t currentDescriptorIndex;
+	gs_gpu_descriptor_heap_pool* pool = 0;
+	ID3D12DescriptorHeap* handle = NULL;
+	D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	D3D12_GPU_DESCRIPTOR_HANDLE descriptorHeapGPUStart = {0};
+	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart = {0};
+	int32_t maxDescriptors = 0;
+	int32_t descriptorSize = 0;
+	int32_t currentDescriptorIndex = 0;
 };
 
 struct gs_staging_descriptor {
-	gs_staging_descriptor_pool* pool;
-	gs_staging_descriptor_heap* heap;
-	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
-	int32_t cpuHandleIndex;
+	gs_staging_descriptor_pool* pool = NULL;
+	gs_staging_descriptor_heap* heap = NULL;
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = { 0 };
+	int32_t cpuHandleIndex = 0;
 };
 
 struct gs_staging_descriptor_pool {
-	int32_t heapCount;
-	gs_staging_descriptor_heap** heaps;
-	int32_t descriptorCapacity;
-	int32_t freeDescriptorCount;
-	gs_staging_descriptor* freeDescriptors;
+	int32_t heapCount = 0;
+	gs_staging_descriptor_heap** heaps = NULL;
+	int32_t descriptorCapacity = 0;
+	int32_t freeDescriptorCount = 0;
+	gs_staging_descriptor* freeDescriptors = NULL;
 };
 
 struct gs_gpu_descriptor_heap_pool {
-	int32_t capacity;
-	int32_t count;
-	gs_gpu_descriptor_heap** heap;
+	int32_t capacity = 0;
+	int32_t count = 0;
+	gs_gpu_descriptor_heap** heaps = NULL;
 };
 
-gs_staging_descriptor_pool *staging_descriptor_pool_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type);
+gs_staging_descriptor_pool *gs_staging_descriptor_pool_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type);
 
 void gs_expand_staging_descriptor_pool(ID3D12Device *device, gs_staging_descriptor_pool *pool);
 
 void gs_staging_descriptor_pool_destroy(gs_staging_descriptor_pool *pool);
 
-void gs_release_staging_descriptor(gs_staging_descriptor* cpuDescriptor);
+void gs_staging_descriptor_release(gs_staging_descriptor* cpuDescriptor);
+
+gs_gpu_descriptor_heap_pool* gs_gpu_descriptor_heap_pool_create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type);
+
+void gs_gpu_descriptor_heap_pool_destroy(gs_gpu_descriptor_heap_pool* pool);
+
+gs_gpu_descriptor_heap* gs_acquire_gpu_descriptor_heap(ID3D12Device* device, gs_gpu_descriptor_heap_pool* pool, D3D12_DESCRIPTOR_HEAP_TYPE type);
+
+void gs_gpu_descriptor_heap_release(gs_gpu_descriptor_heap* heap);
 
 struct gs_upload_buffer : gs_obj {
 	ComPtr<ID3D12Resource> resource;
@@ -478,23 +477,18 @@ struct gs_texture_2d : gs_texture {
 	gs_staging_descriptor textureDescriptor;
 	ComPtr<ID3D12Resource> texture;
 
-	gs_staging_descriptor renderTargetDescriptor[6];
-
-	gs_staging_descriptor renderTargetLinearDescriptor[6];
-
-	ComPtr<IDXGISurface1> gdiSurface;
+	gs_staging_descriptor renderTargetDescriptor[6] = {0};
+	gs_staging_descriptor renderTargetLinearDescriptor[6] = { 0 };
 
 	uint32_t width = 0, height = 0;
 	uint32_t flags = 0;
 	DXGI_FORMAT dxgiFormatResource = DXGI_FORMAT_UNKNOWN;
 	DXGI_FORMAT dxgiFormatView = DXGI_FORMAT_UNKNOWN;
 	DXGI_FORMAT dxgiFormatViewLinear = DXGI_FORMAT_UNKNOWN;
+
 	bool isRenderTarget = false;
-	bool isGDICompatible = false;
 	bool isDynamic = false;
-	bool isShared = false;
 	bool genMipmaps = false;
-	uint32_t sharedHandle = GS_INVALID_HANDLE;
 
 	gs_texture_2d *pairedTexture = nullptr;
 	bool twoPlane = false;
@@ -513,7 +507,19 @@ struct gs_texture_2d : gs_texture {
 	void BackupTexture(const uint8_t *const *data);
 	void GetSharedHandle(IDXGIResource *dxgi_res);
 
-	inline void Release() {}
+	inline void Release() {
+		if (textureDescriptor.cpuHandle.ptr != 0)
+			gs_staging_descriptor_release(&textureDescriptor);
+
+		for (int32_t i = 0; i < 6; ++i) {
+			if (renderTargetDescriptor[i].cpuHandle.ptr != 0)
+				gs_staging_descriptor_release(renderTargetDescriptor + i);
+			if (renderTargetLinearDescriptor[i].cpuHandle.ptr != 0)
+				gs_staging_descriptor_release(renderTargetLinearDescriptor + i);
+		}
+
+		texture.Release();
+	}
 
 	inline gs_texture_2d() : gs_texture(GS_TEXTURE_2D, 0, GS_UNKNOWN) {}
 
@@ -573,19 +579,30 @@ struct gs_zstencil_buffer : gs_obj {
 	void InitBuffer();
 
 	void inline Clear() {
-		texture.Clear();
-		gs_release_staging_descriptor(&textureDescriptor);
+		if (textureDescriptor.cpuHandle.ptr != 0) 
+			gs_staging_descriptor_release(&textureDescriptor);
+
+		memset(&textureDescriptor, 0, sizeof(textureDescriptor));
+		texture.Release();
 	}
 
-	inline void Release() {}
+	inline void Release()
+	{
+		if (textureDescriptor.cpuHandle.ptr != 0)
+			gs_staging_descriptor_release(&textureDescriptor);
+
+		memset(&textureDescriptor, 0, sizeof(textureDescriptor));
+		texture.Release();
+	}
+
+	inline gs_zstencil_buffer() {}
 
 	gs_zstencil_buffer(gs_device_t *device, uint32_t width, uint32_t height, gs_zstencil_format format);
 };
 
 struct gs_stage_surface : gs_obj {
 	ComPtr<ID3D12Resource> texture;
-	D3D12_RESOURCE_DESC td = {};
-	D3D12_HEAP_PROPERTIES heapProp = {};
+
 	uint32_t width, height;
 	gs_color_format format;
 	DXGI_FORMAT dxgiFormat;
@@ -603,6 +620,8 @@ struct gs_sampler_state : gs_obj {
 	inline void Release() {
 		if (samplerDescriptor)
 			bfree(samplerDescriptor);
+
+		samplerDescriptor = NULL;
 	}
 
 	gs_sampler_state(gs_device_t *device, const gs_sampler_info *info);
@@ -638,17 +657,14 @@ struct gs_shader : gs_obj {
 	std::vector<gs_shader_param> params;
 
 	int32_t samplerCount = 0;
-	int32_t storageTextureCount = 0;
-	int32_t storageBufferCount = 0; // 
-	int32_t uniformBufferCount = 0; // const buffer
+	int32_t textureCount = 0;
 	int32_t uniform32BitBufferCount = 0; // const buffer
 	size_t constantSize;
 
 	std::vector<uint8_t> data;
 
-	inline void UpdateParam(gs_graphics_rootsignature *root_sig, std::vector<uint8_t> &constData,
-				gs_shader_param &param, bool &upload);
-	void UploadParams(gs_graphics_rootsignature *root_sig);
+	inline void UpdateParam(std::vector<uint8_t> &constData, gs_shader_param &param, bool &upload);
+	void UploadParams();
 
 	void BuildConstantBuffer();
 	void Compile(const char* shaderStr, const char* file, const char* target, ID3D10Blob** shader);
@@ -763,7 +779,7 @@ struct gs_swap_chain : gs_obj {
 
 	gs_texture_2d target;
 	gs_zstencil_buffer zs;
-	ComPtr<IDXGISwapChain> swap;
+	ComPtr<IDXGISwapChain3> swap;
 	ComPtr<ID3D12CommandQueue> commandQueue;
 	HANDLE hWaitable = NULL;
 
@@ -958,6 +974,8 @@ struct gs_device {
 	ComPtr<IDXGIFactory6> factory;
 	ComPtr<ID3D12Device> device;
 	ComPtr<IDXGIAdapter> adapter;
+	ComPtr<ID3D12CommandQueue> commandQueue;
+	ComPtr<ID3D12CommandAllocator> commandAllocator;
 	ComPtr<ID3D12GraphicsCommandList2> commandList;
 	uint32_t adpIdx = 0;
 	bool nv12Supported = false;
@@ -970,8 +988,6 @@ struct gs_device {
 	enum gs_color_space curColorSpace = GS_CS_SRGB;
 	bool curFramebufferSrgb = false;
 	bool curFramebufferInvalidate = false;
-
-	gs_staging_descriptor_pool* stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
 
 	gs_texture *curTextures[GS_MAX_TEXTURES];
 	gs_sampler_state *curSamplers[GS_MAX_TEXTURES];
@@ -991,6 +1007,10 @@ struct gs_device {
 	ZStencilState zstencilState;
 	RasterState rasterState;
 	BlendState blendState;
+
+	gs_staging_descriptor_pool* stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
+	gs_gpu_descriptor_heap_pool* gpuSamplerDescriptorPool;
+	gs_gpu_descriptor_heap_pool* gpuSRVDescriptorPool;
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC currentPSODesc;
 	D3D12_PRIMITIVE_TOPOLOGY curToplogy;
@@ -1013,6 +1033,10 @@ struct gs_device {
 	void InitDevice(uint32_t adapterIdx);
 
 	void AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE heapType, gs_staging_descriptor* cpuDescripotr);
+	void WriteGPUDescriptor(gs_gpu_descriptor_heap *gpuHeap, D3D12_CPU_DESCRIPTOR_HANDLE* cpuHandle, int32_t count,
+				D3D12_GPU_DESCRIPTOR_HANDLE * gpuBaseDescriptor);
+	void TransitionResource(ID3D12Resource *resource, D3D12_RESOURCE_STATES beforeState,
+				D3D12_RESOURCE_STATES afterState);
 
 	void UpdateZStencilState();
 	void UpdateRasterState();

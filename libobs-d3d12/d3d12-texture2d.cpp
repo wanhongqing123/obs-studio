@@ -78,22 +78,6 @@ void gs_texture_2d::BackupTexture(const uint8_t *const *data)
 	}
 }
 
-void gs_texture_2d::GetSharedHandle(IDXGIResource *dxgi_res)
-{
-	HANDLE handle;
-	HRESULT hr;
-
-	hr = dxgi_res->GetSharedHandle(&handle);
-	if (FAILED(hr)) {
-		blog(LOG_WARNING,
-		     "GetSharedHandle: Failed to "
-		     "get shared handle: %08lX",
-		     hr);
-	} else {
-		sharedHandle = (uint32_t)(uintptr_t)handle;
-	}
-}
-
 void gs_texture_2d::InitTexture(const uint8_t *const *data)
 {
 	HRESULT hr;
@@ -107,28 +91,25 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	td.Format = twoPlane ? ((format == GS_R16) ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12) : dxgiFormatResource;
 	td.SampleDesc.Count = 1;
 	td.SampleDesc.Quality = 0;
-	td.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	td.Flags = D3D12_RESOURCE_FLAG_NONE;
+	td.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
 
 	memset(&heapProp, 0, sizeof(heapProp));
 	heapProp.Type = D3D12_HEAP_TYPE_DEFAULT;
 	heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-	heapProp.CreationNodeMask = 1;
-	heapProp.VisibleNodeMask = 1;
+	heapProp.CreationNodeMask = 0;
+	heapProp.VisibleNodeMask = 0;
 
-	D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAGS::D3D12_HEAP_FLAG_NONE |
-				     D3D12_HEAP_FLAGS::D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES;
+	D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAGS::D3D12_HEAP_FLAG_NONE;
 	D3D12_RESOURCE_FLAGS resFlags = D3D12_RESOURCE_FLAGS::D3D12_RESOURCE_FLAG_NONE;
 
-	if (isRenderTarget || isGDICompatible) {
-		heapFlags = heapFlags | D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES;
+	if (isRenderTarget) {
+		resFlags = resFlags | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 	}
 
-	if ((flags & GS_SHARED_KM_TEX) != 0 || (flags & GS_SHARED_TEX) != 0) {
-		heapFlags = heapFlags | D3D12_HEAP_FLAGS::D3D12_HEAP_FLAG_SHARED;
-	}
-
+	td.Flags = resFlags;
 	D3D12_RESOURCE_STATES initResState = D3D12_RESOURCE_STATE_COPY_DEST;
 	hr = device->device->CreateCommittedResource(&heapProp, heapFlags, &td, initResState, nullptr,
 						     IID_PPV_ARGS(&texture));
@@ -218,11 +199,8 @@ gs_texture_2d::gs_texture_2d(gs_device_t *device, uint32_t width, uint32_t heigh
 	  dxgiFormatView(ConvertGSTextureFormatView(format)),
 	  dxgiFormatViewLinear(ConvertGSTextureFormatViewLinear(format)),
 	  isRenderTarget((flags_ & GS_RENDER_TARGET) != 0),
-	  isGDICompatible(gdiCompatible),
 	  isDynamic((flags_ & GS_DYNAMIC) != 0),
-	  isShared((flags_ & SHARED_FLAGS) != 0),
 	  genMipmaps((flags_ & GS_BUILD_MIPMAPS) != 0),
-	  sharedHandle(GS_INVALID_HANDLE),
 	  twoPlane(twoPlane_)
 {
 	InitTexture(data);
@@ -236,7 +214,6 @@ gs_texture_2d::gs_texture_2d(gs_device_t *device, ID3D12Resource *nv12tex, uint3
 	: gs_texture(device, gs_type::gs_texture_2d, GS_TEXTURE_2D),
 	  isRenderTarget((flags_ & GS_RENDER_TARGET) != 0),
 	  isDynamic((flags_ & GS_DYNAMIC) != 0),
-	  isShared((flags_ & SHARED_FLAGS) != 0),
 	  genMipmaps((flags_ & GS_BUILD_MIPMAPS) != 0),
 	  twoPlane(true),
 	  texture(nv12tex)
@@ -264,9 +241,7 @@ gs_texture_2d::gs_texture_2d(gs_device_t *device, ID3D12Resource *nv12tex, uint3
 }
 
 gs_texture_2d::gs_texture_2d(gs_device_t *device, uint32_t handle, bool ntHandle)
-	: gs_texture(device, gs_type::gs_texture_2d, GS_TEXTURE_2D),
-	  isShared(true),
-	  sharedHandle(handle)
+	: gs_texture(device, gs_type::gs_texture_2d, GS_TEXTURE_2D)
 {
 	HRESULT hr;
 	hr = device->device->OpenSharedHandle((HANDLE)(uintptr_t)handle, __uuidof(ID3D12Resource),

@@ -298,7 +298,7 @@ void gs_shader::Compile(const char* shaderString, const char* file, const char* 
 #endif
 }
 
-inline void gs_shader::UpdateParam(gs_graphics_rootsignature* root_sig, std::vector<uint8_t>& constData, gs_shader_param& param, bool& upload)
+inline void gs_shader::UpdateParam(std::vector<uint8_t>& constData, gs_shader_param& param, bool& upload)
 {
 	if (param.type != GS_SHADER_PARAM_TEXTURE) {
 		if (!param.curValue.size())
@@ -323,21 +323,20 @@ inline void gs_shader::UpdateParam(gs_graphics_rootsignature* root_sig, std::vec
 	else if (param.curValue.size() == sizeof(struct gs_shader_texture)) {
 		struct gs_shader_texture shader_tex;
 		memcpy(&shader_tex, param.curValue.data(), sizeof(shader_tex));
+		if (param.nextSampler) {
+			gs_staging_descriptor* state = param.nextSampler->samplerDescriptor;
+			device->curSamplers[param.textureID] = param.nextSampler;
+			param.nextSampler = nullptr;
+		}
+
 		if (shader_tex.srgb)
 			device_load_texture_srgb(device, shader_tex.tex, param.textureID);
 		else
 			device_load_texture(device, shader_tex.tex, param.textureID);
-
-		if (param.nextSampler) {
-			gs_staging_descriptor* state = param.nextSampler->samplerDescriptor;
-			// device->commandList->SetComputeRootShaderResourceView
-
-			param.nextSampler = nullptr;
-		}
 	}
 }
 
-void gs_shader::UploadParams(gs_graphics_rootsignature* root_sig)
+void gs_shader::UploadParams()
 {
 	std::vector<uint8_t> constData;
 	bool upload = false;
@@ -345,21 +344,20 @@ void gs_shader::UploadParams(gs_graphics_rootsignature* root_sig)
 	constData.reserve(constantSize);
 
 	for (size_t i = 0; i < params.size(); i++)
-		UpdateParam(root_sig, constData, params[i], upload);
+		UpdateParam(constData, params[i], upload);
 
 	if (constData.size() != constantSize)
 		throw "Invalid constant data size given to shader";
 
 	if (upload) {
-		if (type == GS_SHADER_VERTEX) {
+		gs_graphics_rootsignature *root_sig = device->currentPipeline->rootSignature;
+		if (type == GS_SHADER_VERTEX)
 			device->commandList->SetGraphicsRoot32BitConstants(
-				root_sig->vertexUniform32BitBufferIndex, uniform32BitBufferCount, constData.data(), 0);
-		}
+				root_sig->vertexUniform32BitBufferRootIndex, uniform32BitBufferCount, constData.data(), 0);
 
-		if (type == GS_SHADER_VERTEX) {
+		if (type == GS_SHADER_VERTEX)
 			device->commandList->SetGraphicsRoot32BitConstants(
-				root_sig->pixelUniform32BitBufferIndex, uniform32BitBufferCount, constData.data(), 0);
-		}
+				root_sig->pixelUniform32BitBufferRootIndex, uniform32BitBufferCount, constData.data(), 0);
 	}
 }
 

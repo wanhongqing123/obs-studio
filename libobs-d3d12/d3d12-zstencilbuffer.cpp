@@ -53,6 +53,7 @@ void gs_zstencil_buffer::InitBuffer()
 		throw HRError("Failed to create depth stencil texture", hr);
 
 	device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_DSV, &textureDescriptor);
+
 	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
 	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 	dsvDesc.Texture2D.MipSlice = 0;

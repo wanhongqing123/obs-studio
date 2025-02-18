@@ -26,26 +26,53 @@ gs_stage_surface::gs_stage_surface(gs_device_t *device, uint32_t width, uint32_t
 {
 	HRESULT hr;
 
-	memset(&td, 0, sizeof(td));
-	td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	td.Width = width;
-	td.Height = height;
-	td.DepthOrArraySize = 1;
-	td.MipLevels = 1;
-	td.Format = dxgiFormat;
-	td.SampleDesc.Count = 1;
-	td.SampleDesc.Quality = 0;
-	td.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	td.Flags = D3D12_RESOURCE_FLAG_NONE;
+	D3D12_RESOURCE_DESC downloadDesc;
+	memset(&downloadDesc, 0, sizeof(downloadDesc));
+	downloadDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	downloadDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+	downloadDesc.Height = 1;
+	downloadDesc.DepthOrArraySize = 1;
+	downloadDesc.MipLevels = 1;
+	downloadDesc.Format = DXGI_FORMAT_UNKNOWN;
+	downloadDesc.SampleDesc.Count = 1;
+	downloadDesc.SampleDesc.Quality = 0;
+	downloadDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	downloadDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-	memset(&heapProp, 0, sizeof(heapProp));
-	heapProp.Type = D3D12_HEAP_TYPE_READBACK;
-	heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-	heapProp.CreationNodeMask = 1;
-	heapProp.VisibleNodeMask = 1;
+	D3D12_HEAP_PROPERTIES heapProperties;
+	memset(&heapProperties, 0, sizeof(heapProperties));
+	heapProperties.Type = D3D12_HEAP_TYPE_READBACK;
+	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-	hr = device->device->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &td,
+
+	D3D12_RESOURCE_DESC textureDesc;
+	memset(&textureDesc, 0, sizeof(textureDesc));
+
+	textureDesc.Width = width;
+	textureDesc.Height = height;
+	textureDesc.MipLevels = 1;
+	textureDesc.DepthOrArraySize = 1;
+	textureDesc.Format = dxgiFormat;
+	textureDesc.SampleDesc.Count = 1;
+	textureDesc.SampleDesc.Quality = 0;
+	textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	// NV12 textures must have even width and height
+	if (dxgiFormat == DXGI_FORMAT_NV12 || dxgiFormat == DXGI_FORMAT_P010) {
+		textureDesc.Width = (textureDesc.Width + 1) & ~1;
+		textureDesc.Height = (textureDesc.Height + 1) & ~1;
+	}
+
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT placedTextureDesc;
+	uint32_t row, NumRows, RowPitch;
+	uint64_t RowLength;
+	device->device->GetCopyableFootprints(&textureDesc, 0, 1, 0, &placedTextureDesc, &NumRows, &RowLength,
+					      &downloadDesc.Width);
+	RowPitch = placedTextureDesc.Footprint.RowPitch;
+
+	hr = device->device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &downloadDesc,
 						     D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
 	if (FAILED(hr))
 		throw HRError("Failed to create staging surface", hr);
@@ -60,27 +87,54 @@ gs_stage_surface::gs_stage_surface(gs_device_t *device, uint32_t width, uint32_t
 {
 	HRESULT hr;
 
-	memset(&td, 0, sizeof(td));
-	td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	td.Width = width;
-	td.Height = height;
-	td.DepthOrArraySize = 1;
-	td.MipLevels = 1;
-	td.Format = dxgiFormat;
-	td.SampleDesc.Count = 1;
-	td.SampleDesc.Quality = 0;
-	td.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	td.Flags = D3D12_RESOURCE_FLAG_NONE;
+	D3D12_RESOURCE_DESC downloadDesc;
+	memset(&downloadDesc, 0, sizeof(downloadDesc));
+	downloadDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	downloadDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+	downloadDesc.Height = 1;
+	downloadDesc.DepthOrArraySize = 1;
+	downloadDesc.MipLevels = 1;
+	downloadDesc.Format = DXGI_FORMAT_UNKNOWN;
+	downloadDesc.SampleDesc.Count = 1;
+	downloadDesc.SampleDesc.Quality = 0;
+	downloadDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	downloadDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-	memset(&heapProp, 0, sizeof(heapProp));
-	heapProp.Type = D3D12_HEAP_TYPE_READBACK;
-	heapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	heapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-	heapProp.CreationNodeMask = 1;
-	heapProp.VisibleNodeMask = 1;
+	D3D12_HEAP_PROPERTIES heapProperties;
+	memset(&heapProperties, 0, sizeof(heapProperties));
+	heapProperties.Type = D3D12_HEAP_TYPE_READBACK;
+	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-	hr = device->device->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &td,
-						     D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
+
+	D3D12_RESOURCE_DESC textureDesc;
+	memset(&textureDesc, 0, sizeof(textureDesc));
+
+	textureDesc.Width = width;
+	textureDesc.Height = height;
+	textureDesc.MipLevels = 1;
+	textureDesc.DepthOrArraySize = 1;
+	textureDesc.Format = dxgiFormat;
+	textureDesc.SampleDesc.Count = 1;
+	textureDesc.SampleDesc.Quality = 0;
+	textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	// NV12 textures must have even width and height
+	if (dxgiFormat == DXGI_FORMAT_NV12 || dxgiFormat == DXGI_FORMAT_P010) {
+		textureDesc.Width = (textureDesc.Width + 1) & ~1;
+		textureDesc.Height = (textureDesc.Height + 1) & ~1;
+	}
+
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT placedTextureDesc;
+	uint32_t row, NumRows, RowPitch;
+	uint64_t RowLength;
+	device->device->GetCopyableFootprints(&textureDesc, 0, 1, 0, &placedTextureDesc, &NumRows, &RowLength,
+		&downloadDesc.Width);
+	RowPitch = placedTextureDesc.Footprint.RowPitch;
+
+	hr = device->device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &downloadDesc,
+		D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
 	if (FAILED(hr))
 		throw HRError("Failed to create staging surface", hr);
 }

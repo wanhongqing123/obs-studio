@@ -124,7 +124,18 @@ void gs_swap_chain::InitTarget(uint32_t cx, uint32_t cy)
 	rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 	rtv.Texture2D.MipSlice = 0;
 
-	for (int32_t i = 0; i < initData.num_backbuffers; ++i) {
+	device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetDescriptor[0]);
+	device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetDescriptor[0].cpuHandle);
+	/*if (target.dxgiFormatView == target.dxgiFormatViewLinear) {
+		target.renderTargetLinearDescriptor[0] = target.renderTargetDescriptor[0];
+	}
+	else {
+		rtv.Format = target.dxgiFormatViewLinear;
+		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetLinearDescriptor[0]);
+		device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetLinearDescriptor[0].cpuHandle);
+	}*/
+
+	/*for (int32_t i = 0; i < initData.num_backbuffers; ++i) {
 		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetDescriptor[i]);
 		device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetDescriptor[i].cpuHandle);
 		if (target.dxgiFormatView == target.dxgiFormatViewLinear) {
@@ -135,7 +146,7 @@ void gs_swap_chain::InitTarget(uint32_t cx, uint32_t cy)
 			device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetLinearDescriptor[i]);
 			device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetLinearDescriptor[i].cpuHandle);
 		}
-	}
+	}*/
 }
 
 void gs_swap_chain::InitZStencilBuffer(uint32_t cx, uint32_t cy)
@@ -235,16 +246,21 @@ gs_swap_chain::gs_swap_chain(gs_device *device, const gs_init_data *data)
 		throw HRError("Failed to create command queue", hr);
 
 	space = make_swap_desc(device, swapDesc, &initData, effect, flags);
-	hr = device->factory->CreateSwapChain(commandQueue, &swapDesc, swap.Assign());
+
+	ComPtr<IDXGISwapChain> swap1;
+	hr = device->factory->CreateSwapChain(commandQueue, &swapDesc, swap1.Assign());
 	if (FAILED(hr))
 		throw HRError("Failed to create swap chain", hr);
+
+	swap = ComQIPtr<IDXGISwapChain3>(swap1);
+	if (!swap)
+		throw HRError("Failed to create swap chain3", hr);
 
 	/* Ignore Alt+Enter */
 	device->factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
 
 	if (flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) {
-		ComPtr<IDXGISwapChain2> swap2 = ComQIPtr<IDXGISwapChain2>(swap);
-		hWaitable = swap2->GetFrameLatencyWaitableObject();
+		hWaitable = swap->GetFrameLatencyWaitableObject();
 		if (hWaitable == NULL) {
 			throw HRError("Failed to GetFrameLatencyWaitableObject", hr);
 		}
@@ -261,7 +277,7 @@ gs_swap_chain::~gs_swap_chain()
 
 void gs_device::InitFactory()
 {
-	HRESULT hr = CreateDXGIFactory2(0, IID_PPV_ARGS(&factory));
+	HRESULT hr = CreateDXGIFactory2(/*DXGI_CREATE_FACTORY_DEBUG*/0, IID_PPV_ARGS(&factory));
 	if (FAILED(hr))
 		throw UnsupportedHWError("Failed to create DXGIFactory", hr);
 }
@@ -446,6 +462,49 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 	if (FAILED(hr))
 		throw UnsupportedHWError("Failed to create device", hr);
 
+	/*ID3D12InfoQueue* infoQueue = NULL;
+	D3D12_MESSAGE_SEVERITY severities[] = { D3D12_MESSAGE_SEVERITY_INFO };
+	D3D12_INFO_QUEUE_FILTER filter;
+
+	device->QueryInterface(IID_PPV_ARGS(&infoQueue));
+
+	memset(&filter, 0, sizeof(filter));
+	filter.DenyList.NumSeverities = 1;
+	filter.DenyList.pSeverityList = severities;
+	infoQueue->PushStorageFilter(&filter);
+
+	infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+	infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);*/
+
+	D3D12_COMMAND_QUEUE_DESC queueDesc;
+	memset(&queueDesc, 0, sizeof(queueDesc));
+
+	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+
+	hr = device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue));
+	if (FAILED(hr))
+		throw UnsupportedHWError("Failed to create commandQueue", hr);
+
+	hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
+	if (FAILED(hr))
+		throw UnsupportedHWError("Failed to create commandAllocator", hr);
+
+	hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, NULL,
+		IID_PPV_ARGS(&commandList));
+	if (FAILED(hr))
+		throw UnsupportedHWError("Failed to create commandList", hr);
+
+	stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] =
+		gs_staging_descriptor_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] =
+		gs_staging_descriptor_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+	stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_RTV] =
+		gs_staging_descriptor_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_DSV] =
+		gs_staging_descriptor_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+
 	blog(LOG_INFO, "D3D12 loaded successfully, feature level used: %x", (unsigned int)levelUsed);
 }
 
@@ -462,6 +521,43 @@ void gs_device::AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE heapType, gs_
 	pool->freeDescriptorCount -= 1;
 }
 
+void gs_device::WriteGPUDescriptor(gs_gpu_descriptor_heap *gpuHeap, D3D12_CPU_DESCRIPTOR_HANDLE *cpuHandle,
+				   int32_t count, D3D12_GPU_DESCRIPTOR_HANDLE *gpuBaseDescriptor)
+{
+	D3D12_CPU_DESCRIPTOR_HANDLE gpuHeapCpuHandle;
+
+	gpuHeapCpuHandle.ptr =
+		gpuHeap->descriptorHeapCPUStart.ptr + (gpuHeap->currentDescriptorIndex * gpuHeap->descriptorSize);
+	gpuBaseDescriptor->ptr =
+		gpuHeap->descriptorHeapGPUStart.ptr + (gpuHeap->currentDescriptorIndex * gpuHeap->descriptorSize);
+
+	for (int32_t i = 0; i < count; i += 1) {
+		if (!cpuHandle[i].ptr)
+			continue;
+
+		device->CopyDescriptorsSimple(1, gpuHeapCpuHandle, cpuHandle[i], gpuHeap->heapType);
+
+		gpuHeap->currentDescriptorIndex += 1;
+		gpuHeapCpuHandle.ptr += gpuHeap->descriptorSize;
+	}
+}
+
+void gs_device::TransitionResource(ID3D12Resource *resource, D3D12_RESOURCE_STATES beforeState,
+				   D3D12_RESOURCE_STATES afterState)
+{
+	D3D12_RESOURCE_BARRIER barrier;
+	memset(&barrier, 0, sizeof(barrier));
+
+	if (beforeState != afterState) {
+		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		barrier.Transition.pResource = resource;
+		barrier.Transition.StateBefore = beforeState;
+		barrier.Transition.StateAfter = afterState;
+		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+
+		commandList->ResourceBarrier(1, &barrier);
+	}
+}
 
 static inline void ConvertStencilSide(D3D12_DEPTH_STENCILOP_DESC &desc, const StencilSide &side)
 {
@@ -570,6 +666,18 @@ gs_device::gs_device(uint32_t adapterIdx)
 		curTextures[i] = NULL;
 		curSamplers[i] = NULL;
 	}
+
+	//ID3D12Debug* debugInterface = NULL;
+	//D3D12GetDebugInterface(IID_PPV_ARGS(&debugInterface));
+	//debugInterface->EnableDebugLayer();
+
+	//IDXGIInfoQueue* dxgiInfoQueue = NULL;
+	//IDXGIDebug* dxgiDebug;
+	//DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgiDebug));
+	//DXGIGetDebugInterface1(0, IID_PPV_ARGS(& dxgiInfoQueue));
+	//static const GUID SDL_DXGI_DEBUG_ALL = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x43, 0xe9, 0xa9, 0xcf, 0xda, 0x8 } };
+	//dxgiInfoQueue->SetBreakOnSeverity(SDL_DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, TRUE);
+	//dxgiInfoQueue->SetBreakOnSeverity(SDL_DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
 
 	InitFactory();
 	InitAdapter(adapterIdx);
@@ -1474,12 +1582,56 @@ void device_load_indexbuffer(gs_device_t *device, gs_indexbuffer_t *indexbuffer)
 	device->curIndexBuffer = indexbuffer;
 }
 
-void device_load_texture(gs_device_t *device, gs_texture_t *tex, int unit)
+static void device_load_texture_internal(gs_device_t *device, gs_texture_t *tex, int unit)
 {
 	if (device->curTextures[unit] == tex)
 		return;
 
 	device->curTextures[unit] = tex;
+
+	gs_gpu_descriptor_heap *heap = gs_acquire_gpu_descriptor_heap(device->device, device->gpuSRVDescriptorPool,
+								      D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandles[GS_MAX_TEXTURES];
+	for (int32_t i = 0; i < GS_MAX_TEXTURES; i += 1) {
+		if (!device->curTextures[i])
+			continue;
+
+		gs_texture_2d *curTexture = dynamic_cast<gs_texture_2d *>(device->curTextures[i]);
+		if (!curTexture)
+			continue;
+
+		cpuHandles[i] = curTexture->textureDescriptor.cpuHandle;
+	}
+
+	D3D12_GPU_DESCRIPTOR_HANDLE gpuBaseDescriptor;
+	device->WriteGPUDescriptor(heap, cpuHandles, device->curPixelShader->textureCount, &gpuBaseDescriptor);
+
+	device->commandList->SetGraphicsRootDescriptorTable(
+		device->currentPipeline->rootSignature->pixelTextureRootIndex, gpuBaseDescriptor);
+
+	memset(cpuHandles, 0, sizeof(cpuHandles));
+	heap = gs_acquire_gpu_descriptor_heap(device->device, device->gpuSamplerDescriptorPool,
+					      D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+	for (int32_t i = 0; i < GS_MAX_TEXTURES; i += 1) {
+		if (!device->curSamplers[i])
+			continue;
+
+		cpuHandles[i] = device->curSamplers[i]->samplerDescriptor->cpuHandle;
+	}
+
+	device->WriteGPUDescriptor(heap, cpuHandles, device->curPixelShader->samplerCount, &gpuBaseDescriptor);
+
+	device->commandList->SetGraphicsRootDescriptorTable(
+		device->currentPipeline->rootSignature->pixelSamplerRootIndex, gpuBaseDescriptor);
+}
+
+void device_load_texture(gs_device_t *device, gs_texture_t *tex, int unit)
+{
+	if (device->curTextures[unit] == tex)
+		return;
+
+	device_load_texture_internal(device, tex, unit);
 }
 
 void device_load_texture_srgb(gs_device_t *device, gs_texture_t *tex, int unit)
@@ -1487,7 +1639,7 @@ void device_load_texture_srgb(gs_device_t *device, gs_texture_t *tex, int unit)
 	if (device->curTextures[unit] == tex)
 		return;
 
-	device->curTextures[unit] = tex;
+	device_load_texture_internal(device, tex, unit);
 }
 
 void device_load_samplerstate(gs_device_t *device, gs_samplerstate_t *samplerstate, int unit)
@@ -1515,7 +1667,8 @@ void device_load_vertexshader(gs_device_t *device, gs_shader_t *vertshader)
 	}
 
 	device->curVertexShader = vs;
-	device->currentPSODesc.VS = D3D12_SHADER_BYTECODE{vs->data.data(), vs->data.size()};
+	device->currentPSODesc.VS.pShaderBytecode = vs->data.data();
+	device->currentPSODesc.VS.BytecodeLength = vs->data.size();
 }
 
 static inline void clear_textures(gs_device_t *device)
@@ -1846,8 +1999,8 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 		// pipeline
 
 		device->UpdateViewProjMatrix();
-		device->curVertexShader->UploadParams(device->currentPipeline->rootSignature);
-		device->curPixelShader->UploadParams(device->currentPipeline->rootSignature);
+		device->curVertexShader->UploadParams();
+		device->curPixelShader->UploadParams();
 
 	} catch (const char *error) {
 		blog(LOG_ERROR, "device_draw (D3D11): %s", error);
@@ -1946,19 +2099,26 @@ bool device_is_present_ready(gs_device_t *device)
 
 void device_present(gs_device_t *device)
 {
-	/*gs_swap_chain *const curSwapChain = device->curSwapChain;
+	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	if (curSwapChain) {
-		device->context->OMSetRenderTargets(0, nullptr, nullptr);
-		device->curFramebufferInvalidate = true;
+
+		device->TransitionResource(curSwapChain->target.texture, D3D12_RESOURCE_STATE_RENDER_TARGET,
+					   D3D12_RESOURCE_STATE_PRESENT);
+
+		device->commandList->Close();
+		curSwapChain->commandQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&device->commandList);
+
 
 		const UINT interval = curSwapChain->hWaitable ? 1 : 0;
 		const HRESULT hr = curSwapChain->swap->Present(interval, 0);
+		device->TransitionResource(curSwapChain->target.texture, D3D12_RESOURCE_STATE_PRESENT,
+			D3D12_RESOURCE_STATE_RENDER_TARGET);
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
-			device->RebuildDevice();
+			// device->RebuildDevice();
 		}
 	} else {
-		blog(LOG_WARNING, "device_present (D3D11): No active swap");
-	}*/
+		blog(LOG_WARNING, "device_present (D3D12): No active swap");
+	}
 }
 
 void device_flush(gs_device_t *device)
@@ -2637,42 +2797,17 @@ extern "C" EXPORT gs_texture_t *device_texture_create_gdi(gs_device_t *device, u
 
 static inline bool TextureGDICompatible(gs_texture_2d *tex2d, const char *func)
 {
-	if (!tex2d->isGDICompatible) {
-		blog(LOG_ERROR, "%s (D3D11): Texture is not GDI compatible", func);
-		return false;
-	}
-
-	return true;
+	return false;
 }
 
 extern "C" EXPORT void *gs_texture_get_dc(gs_texture_t *tex)
 {
-	HDC hDC = nullptr;
-
-	if (tex->type != GS_TEXTURE_2D)
-		return nullptr;
-
-	gs_texture_2d *tex2d = static_cast<gs_texture_2d *>(tex);
-	if (!TextureGDICompatible(tex2d, "gs_texture_get_dc"))
-		return nullptr;
-
-	if (!tex2d->gdiSurface)
-		return nullptr;
-
-	tex2d->gdiSurface->GetDC(true, &hDC);
-	return hDC;
+	return nullptr;
 }
 
 extern "C" EXPORT void gs_texture_release_dc(gs_texture_t *tex)
 {
-	if (tex->type != GS_TEXTURE_2D)
-		return;
-
-	gs_texture_2d *tex2d = static_cast<gs_texture_2d *>(tex);
-	if (!TextureGDICompatible(tex2d, "gs_texture_release_dc"))
-		return;
-
-	tex2d->gdiSurface->ReleaseDC(nullptr);
+	return;
 }
 
 extern "C" EXPORT gs_texture_t *device_texture_open_shared(gs_device_t *device, uint32_t handle)
@@ -2711,7 +2846,7 @@ extern "C" EXPORT uint32_t device_texture_get_shared_handle(gs_texture_t *tex)
 	if (tex->type != GS_TEXTURE_2D)
 		return GS_INVALID_HANDLE;
 
-	return tex2d->isShared ? tex2d->sharedHandle : GS_INVALID_HANDLE;
+	return GS_INVALID_HANDLE;
 }
 
 extern "C" EXPORT gs_texture_t *device_texture_wrap_obj(gs_device_t *device, void *obj)

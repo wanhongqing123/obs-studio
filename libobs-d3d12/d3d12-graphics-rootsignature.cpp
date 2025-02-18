@@ -35,107 +35,6 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 	memset(&descriptorRanges, 0, sizeof(descriptorRanges));
 	memset(&rootParameter, 0, sizeof(rootParameter));
 
-	vertexSamplerRootIndex = -1;
-	vertexSamplerTextureRootIndex = -1;
-	vertexStorageTextureRootIndex = -1;
-	vertexStorageBufferRootIndex = -1;
-	vertexUniform32BitBufferIndex = -1;
-
-	pixelSamplerRootIndex = -1;
-	pixelSamplerTextureRootIndex = -1;
-	pixelStorageTextureRootIndex = -1;
-	pixelStorageBufferRootIndex = -1;
-	pixelUniform32BitBufferIndex = -1;
-
-	for (int32_t i = 0; i < MAX_UNIFORM_BUFFERS_PER_STAGE; i += 1) {
-		vertexUniformBufferRootIndex[i] = -1;
-		pixelUniformBufferRootIndex[i] = -1;
-	}
-
-	if (vertexShader->samplerCount > 0) {
-		// Vertex Samplers
-		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-		descriptorRange.NumDescriptors = vertexShader->samplerCount;
-		descriptorRange.BaseShaderRegister = 0;
-		descriptorRange.RegisterSpace = 0;
-		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-		descriptorRanges[rangeCount] = descriptorRange;
-
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-		rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-		rootParameters[parameterCount] = rootParameter;
-		vertexSamplerRootIndex = parameterCount;
-		rangeCount += 1;
-		parameterCount += 1;
-
-		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		descriptorRange.NumDescriptors = vertexShader->samplerCount;
-		descriptorRange.BaseShaderRegister = 0;
-		descriptorRange.RegisterSpace = 0;
-		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-		descriptorRanges[rangeCount] = descriptorRange;
-
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-		rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-		rootParameters[parameterCount] = rootParameter;
-		vertexSamplerTextureRootIndex = parameterCount;
-		rangeCount += 1;
-		parameterCount += 1;
-	}
-
-	if (vertexShader->storageTextureCount > 0) {
-		// Vertex storage textures
-		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		descriptorRange.NumDescriptors = vertexShader->storageTextureCount;
-		descriptorRange.BaseShaderRegister = vertexShader->samplerCount;
-		descriptorRange.RegisterSpace = 0;
-		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-		descriptorRanges[rangeCount] = descriptorRange;
-
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-		rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-		rootParameters[parameterCount] = rootParameter;
-		vertexStorageTextureRootIndex = parameterCount;
-		rangeCount += 1;
-		parameterCount += 1;
-	}
-
-	if (vertexShader->storageBufferCount > 0) {
-		// Vertex storage buffers
-		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		descriptorRange.NumDescriptors = vertexShader->storageBufferCount;
-		descriptorRange.BaseShaderRegister = vertexShader->samplerCount + vertexShader->storageTextureCount;
-		descriptorRange.RegisterSpace = 0;
-		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-		descriptorRanges[rangeCount] = descriptorRange;
-
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-		rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-		rootParameters[parameterCount] = rootParameter;
-		vertexStorageBufferRootIndex = parameterCount;
-		rangeCount += 1;
-		parameterCount += 1;
-	}
-
-	// Vertex Uniforms
-	for (int32_t i = 0; i < vertexShader->uniformBufferCount; i += 1) {
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-		rootParameter.Descriptor.ShaderRegister = i;
-		rootParameter.Descriptor.RegisterSpace = 0;
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
-		rootParameters[parameterCount] = rootParameter;
-		vertexUniformBufferRootIndex[i] = parameterCount;
-		parameterCount += 1;
-	}
-
 	if (vertexShader->uniform32BitBufferCount > 0) {
 		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
@@ -143,7 +42,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		rootParameter.Constants.ShaderRegister = 0;
 		rootParameter.Constants.RegisterSpace = 0;
 		rootParameters[parameterCount] = rootParameter;
-		vertexUniform32BitBufferIndex = parameterCount;
+		vertexUniform32BitBufferRootIndex = parameterCount;
 		parameterCount += 1;
 	}
 
@@ -164,9 +63,12 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		pixelSamplerRootIndex = parameterCount;
 		rangeCount += 1;
 		parameterCount += 1;
+	}
 
+	if (pixelShader->textureCount > 0) {
+		// Fragment Storage Textures
 		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		descriptorRange.NumDescriptors = pixelShader->samplerCount;
+		descriptorRange.NumDescriptors = pixelShader->textureCount;
 		descriptorRange.BaseShaderRegister = 0;
 		descriptorRange.RegisterSpace = 0;
 		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
@@ -177,57 +79,8 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
 		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 		rootParameters[parameterCount] = rootParameter;
-		pixelSamplerTextureRootIndex = parameterCount;
+		pixelTextureRootIndex = parameterCount;
 		rangeCount += 1;
-		parameterCount += 1;
-	}
-
-	if (pixelShader->storageTextureCount > 0) {
-		// Fragment Storage Textures
-		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		descriptorRange.NumDescriptors = pixelShader->storageTextureCount;
-		descriptorRange.BaseShaderRegister = pixelShader->samplerCount;
-		descriptorRange.RegisterSpace = 0;
-		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-		descriptorRanges[rangeCount] = descriptorRange;
-
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-		rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-		rootParameters[parameterCount] = rootParameter;
-		pixelStorageTextureRootIndex = parameterCount;
-		rangeCount += 1;
-		parameterCount += 1;
-	}
-
-	if (pixelShader->storageBufferCount) {
-		// Fragment Storage Buffers
-		descriptorRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		descriptorRange.NumDescriptors = pixelShader->storageBufferCount;
-		descriptorRange.BaseShaderRegister = pixelShader->samplerCount + pixelShader->storageTextureCount;
-		descriptorRange.RegisterSpace = 0;
-		descriptorRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-		descriptorRanges[rangeCount] = descriptorRange;
-
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-		rootParameter.DescriptorTable.pDescriptorRanges = &descriptorRanges[rangeCount];
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-		rootParameters[parameterCount] = rootParameter;
-		pixelStorageBufferRootIndex = parameterCount;
-		rangeCount += 1;
-		parameterCount += 1;
-	}
-
-	// Fragment Uniforms
-	for (int32_t i = 0; i < pixelShader->uniformBufferCount; i += 1) {
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-		rootParameter.Descriptor.ShaderRegister = i;
-		rootParameter.Descriptor.RegisterSpace = 0;
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-		rootParameters[parameterCount] = rootParameter;
-		pixelUniformBufferRootIndex[i] = parameterCount;
 		parameterCount += 1;
 	}
 
@@ -238,7 +91,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		rootParameter.Constants.ShaderRegister = 0;
 		rootParameter.Constants.RegisterSpace = 0;
 		rootParameters[parameterCount] = rootParameter;
-		pixelUniform32BitBufferIndex = parameterCount;
+		pixelUniform32BitBufferRootIndex = parameterCount;
 		parameterCount += 1;
 	}
 
@@ -248,7 +101,6 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 	if (rangeCount > MAX_ROOT_SIGNATURE_PARAMETERS)
 		throw HRError("Failed to create rootSignature, rangeCount is too long", hr);
 
-	// Create the root signature description
 	D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc;
 	rootSignatureDesc.NumParameters = parameterCount;
 	rootSignatureDesc.pParameters = rootParameters;
@@ -256,7 +108,6 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 	rootSignatureDesc.pStaticSamplers = NULL;
 	rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-	// Serialize the root signature
 	ID3DBlob *serializedRootSignature;
 	ID3DBlob *errorBlob;
 	hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1,
@@ -271,7 +122,6 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		throw HRError(throwStr.c_str(), hr);
 	}
 
-	// Create the root signature
 	hr = device->device->CreateRootSignature(0, serializedRootSignature->GetBufferPointer(),
 						 serializedRootSignature->GetBufferSize(),
 						 IID_PPV_ARGS(&rootSignature));

@@ -35,12 +35,13 @@ static inline void PushBuffer(UINT *refNumBuffers, D3D12_VERTEX_BUFFER_VIEW *vie
 
 void gs_vertex_buffer::FlushBuffer(ID3D12Resource *buffer, void *array, size_t elementSize)
 {
-	void *vtx_resource;
+	void *vtx_resource = NULL;
 	D3D12_RANGE range;
 	memset(&range, 0, sizeof(D3D12_RANGE));
 	HRESULT hr;
 
-	if (FAILED(hr = buffer->Map(0, &range, &vtx_resource)))
+	hr = buffer->Map(0, &range, &vtx_resource);
+	if (FAILED(hr)) 
 		throw HRError("Failed to map buffer", hr);
 
 	memcpy(vtx_resource, array, elementSize * vbd.data->num);
@@ -76,38 +77,36 @@ UINT gs_vertex_buffer::MakeBufferList(gs_vertex_shader *shader, D3D12_VERTEX_BUF
 void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer,
 				  D3D12_VERTEX_BUFFER_VIEW *view)
 {
-	D3D12_RESOURCE_DESC desc;
-	D3D12_HEAP_PROPERTIES props;
+	D3D12_HEAP_PROPERTIES vbufferHeapProps;
+	D3D12_RESOURCE_DESC vbufferDesc;
 
-	memset(&desc, 0, sizeof(D3D12_RESOURCE_DESC));
-	memset(&props, 0, sizeof(D3D12_HEAP_PROPERTIES));
+	memset(&vbufferHeapProps, 0, sizeof(D3D12_HEAP_PROPERTIES));
 
-	props.Type = D3D12_HEAP_TYPE_UPLOAD;
-	props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+	vbufferHeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+	vbufferHeapProps.CreationNodeMask = 1;
+	vbufferHeapProps.VisibleNodeMask = 1;
 
-	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	desc.Width = numVerts * elementSize;
-	desc.Height = 1;
-	desc.DepthOrArraySize = 1;
-	desc.MipLevels = 1;
-	desc.Format = DXGI_FORMAT_UNKNOWN;
-	desc.SampleDesc.Count = 1;
-	desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	memset(&vbufferDesc, 0, sizeof(D3D12_RESOURCE_DESC));
+	vbufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	vbufferDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+	vbufferDesc.Width = numVerts * elementSize;
+	vbufferDesc.Height = 1;
+	vbufferDesc.DepthOrArraySize = 1;
+	vbufferDesc.MipLevels = 1;
+	vbufferDesc.Format = DXGI_FORMAT_UNKNOWN;
+	vbufferDesc.SampleDesc.Count = 1;
+	vbufferDesc.SampleDesc.Quality = 0;
+	vbufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	vbufferDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
 	HRESULT hr;
 
-	hr = device->device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc,
-						     dynamic ? D3D12_RESOURCE_STATE_GENERIC_READ
-							     : D3D12_RESOURCE_STATE_COPY_DEST,
-						     nullptr, IID_PPV_ARGS(buffer));
+	hr = device->device->CreateCommittedResource(&vbufferHeapProps, D3D12_HEAP_FLAG_NONE, &vbufferDesc,
+						     D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(buffer));
+
+	HRESULT test = device->device->GetDeviceRemovedReason();
 	if (FAILED(hr))
 		throw HRError("Failed to create buffer", hr);
-
-	view->BufferLocation = (*buffer)->GetGPUVirtualAddress();
-	view->SizeInBytes = numVerts * elementSize;
-	view->StrideInBytes = numVerts * elementSize;
 }
 
 void gs_vertex_buffer::BuildBuffers()

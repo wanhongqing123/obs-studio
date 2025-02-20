@@ -83,17 +83,30 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	HRESULT hr;
 
 	memset(&td, 0, sizeof(td));
-	td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 	td.Width = width;
 	td.Height = height;
-	td.DepthOrArraySize = type == GS_TEXTURE_CUBE ? 6 : 1;
 	td.MipLevels = genMipmaps ? 0 : levels;
-	td.Format = twoPlane ? ((format == GS_R16) ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12) : dxgiFormatResource;
+	td.DepthOrArraySize = type == GS_TEXTURE_CUBE ? 6 : 1;
 	td.SampleDesc.Count = 1;
 	td.SampleDesc.Quality = 0;
+	td.Format = twoPlane ? ((format == GS_R16) ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12) : dxgiFormatResource;
+
+	D3D12_RESOURCE_FLAGS resFlags = D3D12_RESOURCE_FLAG_NONE;
+	if (type == GS_TEXTURE_CUBE) {
+
+	}
+
 	td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	td.Flags = D3D12_RESOURCE_FLAG_NONE;
 	td.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+	td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
+	D3D12_CLEAR_VALUE clearValue;
+	memset(&clearValue, 0, sizeof(clearValue));
+
+	D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE;
+
+	clearValue.Format = td.Format;
 
 	memset(&heapProp, 0, sizeof(heapProp));
 	heapProp.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -102,13 +115,12 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	heapProp.CreationNodeMask = 0;
 	heapProp.VisibleNodeMask = 0;
 
-	D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAGS::D3D12_HEAP_FLAG_NONE;
-	D3D12_RESOURCE_FLAGS resFlags = D3D12_RESOURCE_FLAGS::D3D12_RESOURCE_FLAG_NONE;
-
+	D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
 	if (isRenderTarget) {
 		resFlags = resFlags | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+		initialState = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	}
-
+	
 	td.Flags = resFlags;
 	D3D12_RESOURCE_STATES initResState = D3D12_RESOURCE_STATE_COPY_DEST;
 	hr = device->device->CreateCommittedResource(&heapProp, heapFlags, &td, initResState, nullptr,
@@ -118,7 +130,6 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 
 	if (isDynamic || data) {
 		auto desc = texture->GetDesc();
-		// upload_buffer = new gs_upload_buffer(device, desc.Width * desc.Height);
 	}
 
 	if (data) {

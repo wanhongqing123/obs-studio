@@ -39,10 +39,10 @@ struct shader_var;
 struct shader_sampler;
 struct gs_vertex_shader;
 struct gs_pixel_shader;
-struct gs_pipeline_state;
 struct gs_staging_descriptor_pool;
 struct gs_staging_descriptor;
 struct gs_gpu_descriptor_heap_pool;
+struct gs_graphics_rootsignature;
 
 #define MAX_UNIFORM_BUFFERS_PER_STAGE  16
 
@@ -366,18 +366,6 @@ struct gs_obj {
 	virtual ~gs_obj();
 };
 
-struct gs_graphics_rootsignature {
-	ComPtr<ID3D12RootSignature> rootSignature;
-
-	int32_t vertexUniform32BitBufferRootIndex = -1;
-
-	int32_t pixelSamplerRootIndex = -1;
-	int32_t pixelTextureRootIndex = -1;
-	int32_t pixelUniform32BitBufferRootIndex = -1;
-
-	gs_graphics_rootsignature(gs_device* device, gs_vertex_shader* vertexShader, gs_pixel_shader* pixelShader);
-};
-
 struct gs_staging_descriptor_heap {
 	ID3D12DescriptorHeap* handle = nullptr;
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -471,6 +459,22 @@ struct gs_texture : gs_obj {
 	}
 };
 
+struct gs_texture_subresource
+{
+	int32_t layer = 0;
+	int32_t level = 0;
+	int32_t depth = 1;
+	int32_t index = 0;
+
+	gs_staging_descriptor* rtvHandles = nullptr;  // depth
+	gs_staging_descriptor* dsvHandle = nullptr;
+
+	inline ~gs_texture_subresource() {
+		if (rtvHandles) {
+		}
+	}
+};
+
 struct gs_texture_2d : gs_texture {
 	gs_upload_buffer *upload_buffer;
 
@@ -517,6 +521,11 @@ struct gs_texture_2d : gs_texture {
 			if (renderTargetLinearDescriptor[i].cpuHandle.ptr != 0)
 				gs_staging_descriptor_release(renderTargetLinearDescriptor + i);
 		}
+
+		memset(&textureDescriptor, 0, sizeof(textureDescriptor));
+
+		memset(renderTargetDescriptor, 0, 6 * sizeof(renderTargetDescriptor));
+		memset(renderTargetLinearDescriptor, 0, 6 * sizeof(renderTargetLinearDescriptor));
 
 		texture.Release();
 	}
@@ -771,6 +780,7 @@ struct gs_pixel_shader : gs_shader {
 
 	gs_pixel_shader(gs_device_t* device, const char* file, const char* shaderString);
 };
+
 struct gs_swap_chain : gs_obj {
 	HWND hwnd;
 	gs_init_data initData;
@@ -803,18 +813,37 @@ struct gs_swap_chain : gs_obj {
 	virtual ~gs_swap_chain();
 };
 
-struct gs_graphics_pipeline {
-	ID3D12PipelineState *pipeline_state;
-	gs_graphics_rootsignature* rootSignature;
+struct gs_graphics_rootsignature {
+	ComPtr<ID3D12RootSignature> rootSignature;
+	gs_vertex_shader* vertexShader = nullptr;
+	gs_pixel_shader* pixelShader = nullptr;
 
-	struct gs_vertex_shader* vertex_shader;
-	struct gs_pixel_shader* pixel_shader;
+	int32_t vertexUniform32BitBufferRootIndex = -1;
 
-	float blendConstants[4];
-	uint8_t stencilRef;
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
+	int32_t pixelSamplerRootIndex = -1;
+	int32_t pixelTextureRootIndex = -1;
+	int32_t pixelUniform32BitBufferRootIndex = -1;
+
+	inline bool operator == (const gs_graphics_rootsignature& other) const {
+		return vertexShader == other.vertexShader && pixelShader == other.pixelShader;
+	}
+
+	inline bool operator!=(const gs_graphics_rootsignature& other) const {
+		return !(*this == other);
+	}
+
+	inline ~gs_graphics_rootsignature() {
+		rootSignature.Clear();
+		vertexShader = nullptr;
+		pixelShader = nullptr;
+		vertexUniform32BitBufferRootIndex = -1;
+		pixelSamplerRootIndex = -1;
+		pixelTextureRootIndex = -1;
+		pixelUniform32BitBufferRootIndex = -1;
+	}
+
+	gs_graphics_rootsignature(gs_device* device, gs_vertex_shader* vertexShader, gs_pixel_shader* pixelShader);
 };
-
 
 struct gs_vertex_buffer : gs_obj {
 	ComPtr<ID3D12Resource> vertexBuffer;
@@ -896,6 +925,14 @@ struct BlendState {
 	bool blueEnabled;
 	bool alphaEnabled;
 
+	inline bool operator==(const BlendState &other) const
+	{
+		return blendEnabled == other.blendEnabled && srcFactorC == other.srcFactorC &&
+		       destFactorC == other.destFactorC && srcFactorA == other.srcFactorA && op == other.op &&
+		       redEnabled == other.redEnabled && greenEnabled == other.greenEnabled &&
+		       blueEnabled == other.blueEnabled && alphaEnabled == other.alphaEnabled;
+	}
+
 	inline BlendState()
 		: blendEnabled(true),
 		srcFactorC(GS_BLEND_SRCALPHA),
@@ -919,8 +956,19 @@ struct StencilSide {
 	gs_stencil_op_type zfail;
 	gs_stencil_op_type zpass;
 
+	inline bool operator==(const StencilSide &other) const
+	{
+		return test == other.test && fail == other.fail && zfail == other.zfail && zpass == other.zpass;
+	}
+
+	inline bool operator!=(const StencilSide& other) const
+	{
+		return !(*this == other);
+	}
+
 	inline StencilSide() : test(GS_ALWAYS), fail(GS_KEEP), zfail(GS_KEEP), zpass(GS_KEEP) {}
 };
+
 
 struct ZStencilState {
 	bool depthEnabled;
@@ -941,12 +989,33 @@ struct ZStencilState {
 	{
 	}
 
+        inline bool operator==(const ZStencilState &other) const
+	{
+		return depthEnabled == other.depthEnabled && depthWriteEnabled == other.depthWriteEnabled &&
+		       depthFunc == other.depthFunc && stencilEnabled == other.stencilEnabled &&
+		       stencilWriteEnabled == other.stencilWriteEnabled && stencilFront == other.stencilFront &&
+		       stencilBack == other.stencilBack;
+	}
+
+	inline bool operator!=(const ZStencilState& other) const
+	{
+		return !(*this == other);
+	}
+
 	inline ZStencilState(const ZStencilState& state) { memcpy(this, &state, sizeof(ZStencilState)); }
 };
 
 struct RasterState {
 	gs_cull_mode cullMode;
 	bool scissorEnabled;
+
+	inline bool operator==(const RasterState& other) const {
+		return cullMode == other.cullMode && scissorEnabled == other.scissorEnabled;
+	}
+
+	inline bool operator!=(const RasterState& other) const {
+		return !(*this == other);
+	}
 
 	inline RasterState() : cullMode(GS_BACK), scissorEnabled(false) {}
 
@@ -968,6 +1037,26 @@ struct gs_monitor_color_info {
 		  sdr_white_nits(sdr_white_nits)
 	{
 	}
+};
+
+struct gs_graphics_pipeline {
+	ComPtr<ID3D12PipelineState> pipeline_state = nullptr;
+	gs_graphics_rootsignature rootSignature;
+
+	BlendState blendState;
+	RasterState rasterState;
+	ZStencilState zstencilState;
+
+	inline bool operator==(const gs_graphics_pipeline& other) const
+	{
+		return rootSignature == other.rootSignature && blendState == other.blendState &&
+			rasterState == other.rasterState && zstencilState == other.zstencilState;
+	}
+
+	inline bool operator!=(const gs_graphics_pipeline& other) const {
+		return !(*this == other);
+	}
+
 };
 
 struct gs_device {
@@ -1000,21 +1089,20 @@ struct gs_device {
 	gs_vertex_buffer *lastVertexBuffer = nullptr;
 	gs_vertex_shader *lastVertexShader = nullptr;
 
-	bool zstencilStateChanged = true;
-	bool rasterStateChanged = true;
-	bool blendStateChanged = true;
-
-	ZStencilState zstencilState;
-	RasterState rasterState;
-	BlendState blendState;
+	ZStencilState curZstencilState;
+	RasterState curRasterState;
+	BlendState curBlendState;
 
 	gs_staging_descriptor_pool* stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
 	gs_gpu_descriptor_heap_pool* gpuSamplerDescriptorPool;
 	gs_gpu_descriptor_heap_pool* gpuSRVDescriptorPool;
 
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC currentPSODesc;
 	D3D12_PRIMITIVE_TOPOLOGY curToplogy;
-	gs_graphics_pipeline* currentPipeline;
+	gs_graphics_pipeline* curPipeline;
+	gs_graphics_rootsignature* curRootSignature;
+
+	std::vector<gs_graphics_pipeline> graphicsPipelines;
+	std::vector<gs_graphics_rootsignature> graphicsRootSignatures;
 
 	gs_rect viewport;
 
@@ -1038,9 +1126,14 @@ struct gs_device {
 	void TransitionResource(ID3D12Resource *resource, D3D12_RESOURCE_STATES beforeState,
 				D3D12_RESOURCE_STATES afterState);
 
-	void UpdateZStencilState();
-	void UpdateRasterState();
-	void UpdateBlendState();
+	void ConvertZStencilState(D3D12_DEPTH_STENCIL_DESC& desc, const ZStencilState& zs);
+	void ConvertRasterState(D3D12_RASTERIZER_DESC& desc, const RasterState& rs);
+	void ConvertBlendState(D3D12_BLEND_DESC& desc, const BlendState& bs);
+
+	gs_graphics_pipeline* AddGraphicsPipeline();
+	void UpdateGraphicsPipeline();
+
+	gs_graphics_rootsignature* AddGraphicsRootSignature();
 
 	void LoadVertexBufferData();
 

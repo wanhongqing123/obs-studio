@@ -120,12 +120,22 @@ void gs_swap_chain::InitTarget(uint32_t cx, uint32_t cy)
 		throw HRError("Failed to get swap buffer texture", hr);
 
 	D3D12_RENDER_TARGET_VIEW_DESC rtv;
+	memset(&rtv, 0, sizeof(rtv));
 	rtv.Format = target.dxgiFormatView;
 	rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 	rtv.Texture2D.MipSlice = 0;
 
+	int32_t currentBackBufferIndex = swap->GetCurrentBackBufferIndex();
+
 	device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetDescriptor[0]);
 	device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetDescriptor[0].cpuHandle);
+
+	device->commandList->OMSetRenderTargets(1, &target.renderTargetDescriptor[0].cpuHandle, FALSE, NULL);
+	device->TransitionResource(
+		target.texture,
+		D3D12_RESOURCE_STATE_PRESENT,
+		D3D12_RESOURCE_STATE_RENDER_TARGET);
+
 	/*if (target.dxgiFormatView == target.dxgiFormatViewLinear) {
 		target.renderTargetLinearDescriptor[0] = target.renderTargetDescriptor[0];
 	}
@@ -567,71 +577,57 @@ static inline void ConvertStencilSide(D3D12_DEPTH_STENCILOP_DESC &desc, const St
 	desc.StencilPassOp = ConvertGSStencilOp(side.zpass);
 }
 
-void gs_device::UpdateZStencilState()
+void gs_device::ConvertZStencilState(D3D12_DEPTH_STENCIL_DESC& desc, const ZStencilState& zs)
 {
-	if (!zstencilStateChanged)
-		return;
+	memset(&desc, 0, sizeof(desc));
 
-	D3D12_DEPTH_STENCIL_DESC dsd;
-	dsd.DepthEnable = zstencilState.depthEnabled;
-	dsd.DepthFunc = ConvertGSDepthTest(zstencilState.depthFunc);
-	dsd.DepthWriteMask = zstencilState.depthWriteEnabled ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
-	dsd.StencilEnable = zstencilState.stencilEnabled;
-	dsd.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
-	dsd.StencilWriteMask = zstencilState.stencilWriteEnabled ? D3D12_DEFAULT_STENCIL_WRITE_MASK : 0;
-	ConvertStencilSide(dsd.FrontFace, zstencilState.stencilFront);
-	ConvertStencilSide(dsd.BackFace, zstencilState.stencilBack);
-
-	currentPSODesc.DepthStencilState = dsd;
-
-	zstencilStateChanged = false;
+	desc.DepthEnable = zs.depthEnabled;
+	desc.DepthFunc = ConvertGSDepthTest(zs.depthFunc);
+	desc.DepthWriteMask = zs.depthWriteEnabled ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+	desc.StencilEnable = zs.stencilEnabled;
+	desc.StencilReadMask = D3D12_DEFAULT_STENCIL_READ_MASK;
+	desc.StencilWriteMask = zs.stencilWriteEnabled ? D3D12_DEFAULT_STENCIL_WRITE_MASK : 0;
+	ConvertStencilSide(desc.FrontFace, zs.stencilFront);
+	ConvertStencilSide(desc.BackFace, zs.stencilBack);
 }
 
-void gs_device::UpdateRasterState()
+void gs_device::ConvertRasterState(D3D12_RASTERIZER_DESC& desc, const RasterState& rs)
 {
-	if (!rasterStateChanged)
-		return;
+	memset(&desc, 0, sizeof(desc));
 
-	D3D12_RASTERIZER_DESC rd;
-
-	memset(&rd, 0, sizeof(rd));
 	/* use CCW to convert to a right-handed coordinate system */
-	rd.FrontCounterClockwise = true;
-	rd.FillMode = D3D12_FILL_MODE_SOLID;
-	rd.CullMode = ConvertGSCullMode(rasterState.cullMode);
-	rd.DepthClipEnable = true;
-
-	currentPSODesc.RasterizerState = rd;
-
-	rasterStateChanged = false;
+	desc.FrontCounterClockwise = true;
+	desc.FillMode = D3D12_FILL_MODE_SOLID;
+	desc.CullMode = ConvertGSCullMode(rs.cullMode);
+	desc.DepthClipEnable = true;
 }
 
-void gs_device::UpdateBlendState()
+void gs_device::ConvertBlendState(D3D12_BLEND_DESC& desc, const BlendState& bs)
 {
-	if (!blendStateChanged)
-		return;
+	memset(&desc, 0, sizeof(desc));
 
-	D3D12_BLEND_DESC bd;
-
-	memset(&bd, 0, sizeof(bd));
 	for (int i = 0; i < 8; i++) {
-		bd.RenderTarget[i].BlendEnable = blendState.blendEnabled;
-		bd.RenderTarget[i].BlendOp = ConvertGSBlendOpType(blendState.op);
-		bd.RenderTarget[i].BlendOpAlpha = ConvertGSBlendOpType(blendState.op);
-		bd.RenderTarget[i].SrcBlend = ConvertGSBlendType(blendState.srcFactorC);
-		bd.RenderTarget[i].DestBlend = ConvertGSBlendType(blendState.destFactorC);
-		bd.RenderTarget[i].SrcBlendAlpha = ConvertGSBlendType(blendState.srcFactorA);
-		bd.RenderTarget[i].DestBlendAlpha = ConvertGSBlendType(blendState.destFactorA);
-		bd.RenderTarget[i].RenderTargetWriteMask =
-			(blendState.redEnabled ? D3D12_COLOR_WRITE_ENABLE_RED : 0) |
-			(blendState.greenEnabled ? D3D12_COLOR_WRITE_ENABLE_GREEN : 0) |
-			(blendState.blueEnabled ? D3D12_COLOR_WRITE_ENABLE_BLUE : 0) |
-			(blendState.alphaEnabled ? D3D12_COLOR_WRITE_ENABLE_ALPHA : 0);
+		desc.RenderTarget[i].BlendEnable = bs.blendEnabled;
+		desc.RenderTarget[i].BlendOp = ConvertGSBlendOpType(bs.op);
+		desc.RenderTarget[i].BlendOpAlpha = ConvertGSBlendOpType(bs.op);
+		desc.RenderTarget[i].SrcBlend = ConvertGSBlendType(bs.srcFactorC);
+		desc.RenderTarget[i].DestBlend = ConvertGSBlendType(bs.destFactorC);
+		desc.RenderTarget[i].SrcBlendAlpha = ConvertGSBlendType(bs.srcFactorA);
+		desc.RenderTarget[i].DestBlendAlpha = ConvertGSBlendType(bs.destFactorA);
+		desc.RenderTarget[i].RenderTargetWriteMask =
+			(bs.redEnabled ? D3D12_COLOR_WRITE_ENABLE_RED : 0) |
+			(bs.greenEnabled ? D3D12_COLOR_WRITE_ENABLE_GREEN : 0) |
+			(bs.blueEnabled ? D3D12_COLOR_WRITE_ENABLE_BLUE : 0) |
+			(bs.alphaEnabled ? D3D12_COLOR_WRITE_ENABLE_ALPHA : 0);
 	}
+}
 
-	//     ID3D12GraphicsCommandList_OMSetBlendFactor(d3d12CommandBuffer->graphicsCommandList, blendFactor);
-	currentPSODesc.BlendState = bd;
-	blendStateChanged = false;
+gs_graphics_pipeline* gs_device::AddGraphicsPipeline() {
+	return nullptr;
+}
+
+void gs_device::UpdateGraphicsPipeline() {
+
 }
 
 void gs_device::UpdateViewProjMatrix()
@@ -1608,7 +1604,7 @@ static void device_load_texture_internal(gs_device_t *device, gs_texture_t *tex,
 	device->WriteGPUDescriptor(heap, cpuHandles, device->curPixelShader->textureCount, &gpuBaseDescriptor);
 
 	device->commandList->SetGraphicsRootDescriptorTable(
-		device->currentPipeline->rootSignature->pixelTextureRootIndex, gpuBaseDescriptor);
+		device->curRootSignature->pixelTextureRootIndex, gpuBaseDescriptor);
 
 	memset(cpuHandles, 0, sizeof(cpuHandles));
 	heap = gs_acquire_gpu_descriptor_heap(device->device, device->gpuSamplerDescriptorPool,
@@ -1623,7 +1619,7 @@ static void device_load_texture_internal(gs_device_t *device, gs_texture_t *tex,
 	device->WriteGPUDescriptor(heap, cpuHandles, device->curPixelShader->samplerCount, &gpuBaseDescriptor);
 
 	device->commandList->SetGraphicsRootDescriptorTable(
-		device->currentPipeline->rootSignature->pixelSamplerRootIndex, gpuBaseDescriptor);
+		device->curRootSignature->pixelSamplerRootIndex, gpuBaseDescriptor);
 }
 
 void device_load_texture(gs_device_t *device, gs_texture_t *tex, int unit)
@@ -1667,8 +1663,6 @@ void device_load_vertexshader(gs_device_t *device, gs_shader_t *vertshader)
 	}
 
 	device->curVertexShader = vs;
-	device->currentPSODesc.VS.pShaderBytecode = vs->data.data();
-	device->currentPSODesc.VS.BytecodeLength = vs->data.size();
 }
 
 static inline void clear_textures(gs_device_t *device)
@@ -1975,26 +1969,23 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 
 		device->FlushOutputViews();
 
-		device->commandList->SetPipelineState(device->currentPipeline->pipeline_state);
-		device->commandList->SetGraphicsRootSignature(device->currentPipeline->rootSignature->rootSignature);
+		device->commandList->SetPipelineState(device->curPipeline->pipeline_state);
+		device->commandList->SetGraphicsRootSignature(device->curRootSignature->rootSignature);
 
-		float blendFactor[4] = {device->currentPipeline->blendConstants[0],
-					device->currentPipeline->blendConstants[1],
-					device->currentPipeline->blendConstants[2],
-					device->currentPipeline->blendConstants[3]};
+		float blendFactor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
 		device->commandList->OMSetBlendFactor(blendFactor);
 
-		device->commandList->OMSetStencilRef(device->currentPipeline->stencilRef);
+		device->commandList->OMSetStencilRef(0);
 
 		gs_effect_t *effect = gs_get_effect();
 		if (effect)
 			gs_effect_update_params(effect);
 
 		device->LoadVertexBufferData();
-		device->UpdateBlendState();
-		device->UpdateRasterState();
-		device->UpdateZStencilState();
+		//device->UpdateBlendState();
+		///device->UpdateRasterState();
+		//device->UpdateZStencilState();
 
 		// pipeline
 
@@ -2128,110 +2119,100 @@ void device_flush(gs_device_t *device)
 
 void device_set_cull_mode(gs_device_t *device, enum gs_cull_mode mode)
 {
-	if (mode == device->rasterState.cullMode)
+	if (mode == device->curRasterState.cullMode)
 		return;
 
-	device->rasterState.cullMode = mode;
-	device->rasterStateChanged = true;
+	device->curRasterState.cullMode = mode;
 }
 
 enum gs_cull_mode device_get_cull_mode(const gs_device_t *device)
 {
-	return device->rasterState.cullMode;
+	return device->curRasterState.cullMode;
 }
 
 void device_enable_blending(gs_device_t *device, bool enable)
 {
-	if (enable == device->blendState.blendEnabled)
+	if (enable == device->curBlendState.blendEnabled)
 		return;
 
-	device->blendState.blendEnabled = enable;
-	device->blendStateChanged = true;
+	device->curBlendState.blendEnabled = enable;
 }
 
 void device_enable_depth_test(gs_device_t *device, bool enable)
 {
-	if (enable == device->zstencilState.depthEnabled)
+	if (enable == device->curZstencilState.depthEnabled)
 		return;
 
-	device->zstencilState.depthEnabled = enable;
-	device->zstencilStateChanged = true;
+	device->curZstencilState.depthEnabled = enable;
 }
 
 void device_enable_stencil_test(gs_device_t *device, bool enable)
 {
-	if (enable == device->zstencilState.stencilEnabled)
+	if (enable == device->curZstencilState.stencilEnabled)
 		return;
 
-	device->zstencilState.stencilEnabled = enable;
-	device->zstencilStateChanged = true;
+	device->curZstencilState.stencilEnabled = enable;
 }
 
 void device_enable_stencil_write(gs_device_t *device, bool enable)
 {
-	if (enable == device->zstencilState.stencilWriteEnabled)
+	if (enable == device->curZstencilState.stencilWriteEnabled)
 		return;
 
-	device->zstencilState.stencilWriteEnabled = enable;
-	device->zstencilStateChanged = true;
+	device->curZstencilState.stencilWriteEnabled = enable;
 }
 
 void device_enable_color(gs_device_t *device, bool red, bool green, bool blue, bool alpha)
 {
-	if (device->blendState.redEnabled == red && device->blendState.greenEnabled == green &&
-	    device->blendState.blueEnabled == blue && device->blendState.alphaEnabled == alpha)
+	if (device->curBlendState.redEnabled == red && device->curBlendState.greenEnabled == green &&
+	    device->curBlendState.blueEnabled == blue && device->curBlendState.alphaEnabled == alpha)
 		return;
 
-	device->blendState.redEnabled = red;
-	device->blendState.greenEnabled = green;
-	device->blendState.blueEnabled = blue;
-	device->blendState.alphaEnabled = alpha;
-	device->blendStateChanged = true;
+	device->curBlendState.redEnabled = red;
+	device->curBlendState.greenEnabled = green;
+	device->curBlendState.blueEnabled = blue;
+	device->curBlendState.alphaEnabled = alpha;
 }
 
 void device_blend_function(gs_device_t *device, enum gs_blend_type src, enum gs_blend_type dest)
 {
-	if (device->blendState.srcFactorC == src && device->blendState.destFactorC == dest &&
-	    device->blendState.srcFactorA == src && device->blendState.destFactorA == dest)
+	if (device->curBlendState.srcFactorC == src && device->curBlendState.destFactorC == dest &&
+	    device->curBlendState.srcFactorA == src && device->curBlendState.destFactorA == dest)
 		return;
 
-	device->blendState.srcFactorC = src;
-	device->blendState.destFactorC = dest;
-	device->blendState.srcFactorA = src;
-	device->blendState.destFactorA = dest;
-	device->blendStateChanged = true;
+	device->curBlendState.srcFactorC = src;
+	device->curBlendState.destFactorC = dest;
+	device->curBlendState.srcFactorA = src;
+	device->curBlendState.destFactorA = dest;
 }
 
 void device_blend_function_separate(gs_device_t *device, enum gs_blend_type src_c, enum gs_blend_type dest_c,
 				    enum gs_blend_type src_a, enum gs_blend_type dest_a)
 {
-	if (device->blendState.srcFactorC == src_c && device->blendState.destFactorC == dest_c &&
-	    device->blendState.srcFactorA == src_a && device->blendState.destFactorA == dest_a)
+	if (device->curBlendState.srcFactorC == src_c && device->curBlendState.destFactorC == dest_c &&
+	    device->curBlendState.srcFactorA == src_a && device->curBlendState.destFactorA == dest_a)
 		return;
 
-	device->blendState.srcFactorC = src_c;
-	device->blendState.destFactorC = dest_c;
-	device->blendState.srcFactorA = src_a;
-	device->blendState.destFactorA = dest_a;
-	device->blendStateChanged = true;
+	device->curBlendState.srcFactorC = src_c;
+	device->curBlendState.destFactorC = dest_c;
+	device->curBlendState.srcFactorA = src_a;
+	device->curBlendState.destFactorA = dest_a;
 }
 
 void device_blend_op(gs_device_t *device, enum gs_blend_op_type op)
 {
-	if (device->blendState.op == op)
+	if (device->curBlendState.op == op)
 		return;
 
-	device->blendState.op = op;
-	device->blendStateChanged = true;
+	device->curBlendState.op = op;
 }
 
 void device_depth_function(gs_device_t *device, enum gs_depth_test test)
 {
-	if (device->zstencilState.depthFunc == test)
+	if (device->curZstencilState.depthFunc == test)
 		return;
 
-	device->zstencilState.depthFunc = test;
-	device->zstencilStateChanged = true;
+	device->curZstencilState.depthFunc = test;
 }
 
 static inline void update_stencilside_test(gs_device_t *device, StencilSide &side, gs_depth_test test)
@@ -2240,7 +2221,6 @@ static inline void update_stencilside_test(gs_device_t *device, StencilSide &sid
 		return;
 
 	side.test = test;
-	device->zstencilStateChanged = true;
 }
 
 void device_stencil_function(gs_device_t *device, enum gs_stencil_side side, enum gs_depth_test test)
@@ -2248,9 +2228,9 @@ void device_stencil_function(gs_device_t *device, enum gs_stencil_side side, enu
 	int sideVal = (int)side;
 
 	if (sideVal & GS_STENCIL_FRONT)
-		update_stencilside_test(device, device->zstencilState.stencilFront, test);
+		update_stencilside_test(device, device->curZstencilState.stencilFront, test);
 	if (sideVal & GS_STENCIL_BACK)
-		update_stencilside_test(device, device->zstencilState.stencilBack, test);
+		update_stencilside_test(device, device->curZstencilState.stencilBack, test);
 }
 
 static inline void update_stencilside_op(gs_device_t *device, StencilSide &side, enum gs_stencil_op_type fail,
@@ -2262,7 +2242,6 @@ static inline void update_stencilside_op(gs_device_t *device, StencilSide &side,
 	side.fail = fail;
 	side.zfail = zfail;
 	side.zpass = zpass;
-	device->zstencilStateChanged = true;
 }
 
 void device_stencil_op(gs_device_t *device, enum gs_stencil_side side, enum gs_stencil_op_type fail,
@@ -2271,9 +2250,9 @@ void device_stencil_op(gs_device_t *device, enum gs_stencil_side side, enum gs_s
 	int sideVal = (int)side;
 
 	if (sideVal & GS_STENCIL_FRONT)
-		update_stencilside_op(device, device->zstencilState.stencilFront, fail, zfail, zpass);
+		update_stencilside_op(device, device->curZstencilState.stencilFront, fail, zfail, zpass);
 	if (sideVal & GS_STENCIL_BACK)
-		update_stencilside_op(device, device->zstencilState.stencilBack, fail, zfail, zpass);
+		update_stencilside_op(device, device->curZstencilState.stencilBack, fail, zfail, zpass);
 }
 
 void device_set_viewport(gs_device_t *device, int x, int y, int width, int height)
@@ -2303,7 +2282,7 @@ void device_set_scissor_rect(gs_device_t *device, const struct gs_rect *rect)
 {
 	D3D12_RECT d3drect;
 
-	device->rasterState.scissorEnabled = (rect != NULL);
+	device->curRasterState.scissorEnabled = (rect != NULL);
 
 	if (rect != NULL) {
 		d3drect.left = rect->x;
@@ -2312,8 +2291,6 @@ void device_set_scissor_rect(gs_device_t *device, const struct gs_rect *rect)
 		d3drect.bottom = rect->y + rect->cy;
 		device->commandList->RSSetScissorRects(1, &d3drect);
 	}
-
-	device->rasterStateChanged = true;
 }
 
 void device_ortho(gs_device_t *device, float left, float right, float top, float bottom, float zNear, float zFar)

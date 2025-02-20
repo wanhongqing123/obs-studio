@@ -350,7 +350,7 @@ void gs_shader::UploadParams()
 		throw "Invalid constant data size given to shader";
 
 	if (upload) {
-		gs_graphics_rootsignature *root_sig = device->currentPipeline->rootSignature;
+		gs_graphics_rootsignature *root_sig = device->curRootSignature;
 		if (type == GS_SHADER_VERTEX)
 			device->commandList->SetGraphicsRoot32BitConstants(
 				root_sig->vertexUniform32BitBufferRootIndex, uniform32BitBufferCount, constData.data(), 0);

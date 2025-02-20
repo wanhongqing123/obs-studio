@@ -25,7 +25,7 @@ void gs_index_buffer::InitBuffer()
 	memset(&desc, 0, sizeof(D3D12_RESOURCE_DESC));
 	memset(&props, 0, sizeof(D3D12_HEAP_PROPERTIES));
 
-	props.Type = dynamic ? D3D12_HEAP_TYPE_UPLOAD : D3D12_HEAP_TYPE_DEFAULT;
+	props.Type =  D3D12_HEAP_TYPE_UPLOAD;
 	props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
@@ -36,15 +36,14 @@ void gs_index_buffer::InitBuffer()
 	desc.MipLevels = 1;
 	desc.Format = DXGI_FORMAT_UNKNOWN;
 	desc.SampleDesc.Count = 1;
-	desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
 	HRESULT hr;
 
 	hr = device->device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc,
-						     dynamic ? D3D12_RESOURCE_STATE_GENERIC_READ
-							     : D3D12_RESOURCE_STATE_COPY_DEST,
-						     nullptr, IID_PPV_ARGS(indexBuffer.Assign()));
+						     D3D12_RESOURCE_STATE_GENERIC_READ,  nullptr,
+						     IID_PPV_ARGS(indexBuffer.Assign()));
 	if (FAILED(hr))
 		throw HRError("Failed to create buffer", hr);
 

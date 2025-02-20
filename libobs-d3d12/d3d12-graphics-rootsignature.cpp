@@ -20,8 +20,8 @@
 #define MAX_ROOT_SIGNATURE_PARAMETERS 64
 #define VIEW_GPU_DESCRIPTOR_COUNT 65536
 
-gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_vertex_shader *vertexShader,
-						     gs_pixel_shader *pixelShader)
+gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_vertex_shader *vertexShader_,
+						     gs_pixel_shader *pixelShader_) : vertexShader(vertexShader_), pixelShader(pixelShader_)
 {
 	D3D12_ROOT_PARAMETER rootParameters[MAX_ROOT_SIGNATURE_PARAMETERS];
 	D3D12_DESCRIPTOR_RANGE descriptorRanges[MAX_ROOT_SIGNATURE_PARAMETERS];
@@ -33,6 +33,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 
 	memset(&rootParameters, 0, sizeof(rootParameters));
 	memset(&descriptorRanges, 0, sizeof(descriptorRanges));
+	memset(&descriptorRange, 0, sizeof(descriptorRange));
 	memset(&rootParameter, 0, sizeof(rootParameter));
 
 	if (vertexShader->uniform32BitBufferCount > 0) {

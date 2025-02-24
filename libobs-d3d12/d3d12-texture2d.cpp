@@ -82,19 +82,23 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 {
 	HRESULT hr;
 
+	if (type == GS_TEXTURE_CUBE)
+		layerCountOrDepth = 6;
+	else
+		layerCountOrDepth = 1;
+
+	bool isMultisampled = sampleCount > 1;
+
 	memset(&td, 0, sizeof(td));
 	td.Width = width;
 	td.Height = height;
 	td.MipLevels = genMipmaps ? 0 : levels;
-	td.DepthOrArraySize = type == GS_TEXTURE_CUBE ? 6 : 1;
-	td.SampleDesc.Count = 1;
-	td.SampleDesc.Quality = 0;
+	td.DepthOrArraySize = layerCountOrDepth;
+	td.SampleDesc.Count = sampleCount;
+	td.SampleDesc.Quality = isMultisampled ? -1 : 0;
 	td.Format = twoPlane ? ((format == GS_R16) ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12) : dxgiFormatResource;
 
 	D3D12_RESOURCE_FLAGS resFlags = D3D12_RESOURCE_FLAG_NONE;
-	if (type == GS_TEXTURE_CUBE) {
-
-	}
 
 	td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	td.Flags = D3D12_RESOURCE_FLAG_NONE;
@@ -162,10 +166,16 @@ void gs_texture_2d::InitRenderTargets()
 	D3D12_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
 	memset(&renderTargetViewDesc, 0, sizeof(renderTargetViewDesc));
 
+	bool isMultisampled = sampleCount > 1;
+	int32_t layerCount = layerCountOrDepth;
+
 	if (type == GS_TEXTURE_2D) {
 		renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+		if (isMultisampled)
+			renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
 		renderTargetViewDesc.Texture2D.MipSlice = 0;
 		renderTargetViewDesc.Format = dxgiFormatView;
+		renderTargetViewDesc.Texture2D.PlaneSlice = 0;
 		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &renderTargetDescriptor[0]);
 		device->device->CreateRenderTargetView(texture, &renderTargetViewDesc, renderTargetDescriptor[0].cpuHandle);
 		if (dxgiFormatView == dxgiFormatViewLinear) {
@@ -176,22 +186,28 @@ void gs_texture_2d::InitRenderTargets()
 			device->device->CreateRenderTargetView(texture, &renderTargetViewDesc,
 				renderTargetLinearDescriptor[0].cpuHandle);
 		}
-	} else {
-		renderTargetViewDesc.Format = dxgiFormatView;
-		renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
-		renderTargetViewDesc.Texture2DArray.MipSlice = 0;
-		renderTargetViewDesc.Texture2DArray.ArraySize = 1;
-		for (UINT i = 0; i < 6; i++) {
-			renderTargetViewDesc.Texture2DArray.FirstArraySlice = i;
-			device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &renderTargetDescriptor[i]);
-			device->device->CreateRenderTargetView(texture, &renderTargetViewDesc, renderTargetDescriptor[i].cpuHandle);
+		return;
+	}
+
+	renderTargetViewDesc.Format = dxgiFormatView;
+	for (int32_t layerIndex = 0; layerIndex < layerCount; ++layerIndex) {
+		for (int32_t levelIndex = 0; levelIndex < levels; ++levelIndex) {
+			int32_t currentIndex = levelIndex + (layerIndex * levels);
+			device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &renderTargetDescriptor[currentIndex]);
+			renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+			renderTargetViewDesc.Texture2DArray.FirstArraySlice = layerIndex;
+			renderTargetViewDesc.Texture2DArray.MipSlice = levelIndex;
+			renderTargetViewDesc.Texture2DArray.ArraySize = 1;
+			renderTargetViewDesc.Texture2DArray.PlaneSlice = 0;
+			device->device->CreateRenderTargetView(texture, &renderTargetViewDesc, renderTargetDescriptor[currentIndex].cpuHandle);
 			if (dxgiFormatView == dxgiFormatViewLinear) {
-				renderTargetLinearDescriptor[0] = renderTargetDescriptor[0];
-			} else {
+				renderTargetLinearDescriptor[currentIndex] = renderTargetDescriptor[currentIndex];
+			}
+			else {
 				renderTargetViewDesc.Format = dxgiFormatViewLinear;
-				device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &renderTargetLinearDescriptor[i]);
+				device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &renderTargetLinearDescriptor[currentIndex]);
 				device->device->CreateRenderTargetView(texture, &renderTargetViewDesc,
-					renderTargetLinearDescriptor[i].cpuHandle);
+					renderTargetLinearDescriptor[currentIndex].cpuHandle);
 			}
 		}
 	}
@@ -300,4 +316,10 @@ gs_texture_2d::gs_texture_2d(gs_device_t *device, ID3D12Resource *obj)
 	this->dxgiFormatViewLinear = ConvertGSTextureFormatViewLinear(format);
 
 	InitResourceView();
+}
+
+void gs_texture_2d::UploadToTexture(gs_buffer* source, uint32_t source_offset, uint32_t source_pixels_per_row,
+	uint32_t souce_rows_per_layer, gs_texture_2d* dest, GPUTextureRegion textureRegion) {
+
+
 }

@@ -46,6 +46,13 @@ struct gs_graphics_rootsignature;
 
 #define MAX_UNIFORM_BUFFERS_PER_STAGE  16
 
+#define GS_GPU_BUFFERUSAGE_VERTEX                                  (1u << 0) /**< Buffer is a vertex buffer. */
+#define GS_GPU_BUFFERUSAGE_INDEX                                   (1u << 1) /**< Buffer is an index buffer. */
+#define GS_GPU_BUFFERUSAGE_INDIRECT                                (1u << 2) /**< Buffer is an indirect buffer. */
+#define GS_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ                   (1u << 3) /**< Buffer supports storage reads in graphics stages. */
+#define GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ                    (1u << 4) /**< Buffer supports storage reads in the compute stage. */
+#define GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE                   (1u << 5) /**< Buffer supports storage writes in the compute stage. */
+
 static inline uint32_t GetWinVer()
 {
 	struct win_version_info ver;
@@ -354,6 +361,13 @@ enum class gs_type {
 	gs_texture_3d,
 };
 
+enum gs_buffer_type {
+	gs_buffer_type_gpu,
+	gs_buffer_type_uniform,
+	gs_buffer_type_upload,
+	gs_buffer_type_download
+};
+
 struct gs_obj {
 	gs_device_t *device;
 	gs_type obj_type;
@@ -421,20 +435,44 @@ gs_gpu_descriptor_heap* gs_acquire_gpu_descriptor_heap(ID3D12Device* device, gs_
 
 void gs_gpu_descriptor_heap_release(gs_gpu_descriptor_heap* heap);
 
-struct gs_upload_buffer : gs_obj {
-	ComPtr<ID3D12Resource> resource;
-	D3D12_RESOURCE_DESC textureDesc;
-	D3D12_RANGE range;
 
-	gs_upload_buffer(gs_device *device, const D3D12_RESOURCE_DESC& textureDesc);
-	void Map(uint8_t** ptr, uint32_t* linesize);
-	void Unmap();
+
+struct gs_buffer {
+	ComPtr<ID3D12Resource> resource;
+	gs_staging_descriptor uavDescriptor;
+	gs_staging_descriptor srvDescriptor;
+	gs_staging_descriptor cbvDescriptor;
+	D3D12_GPU_VIRTUAL_ADDRESS virtualAddress;
+	bool transitioned = false;
+	gs_buffer_type type = gs_buffer_type_upload;
+	uint32_t usageFlags = 0;
+
+	int32_t size;
+
+	gs_device* device;
+	gs_buffer(gs_device *device, int32_t size, gs_buffer_type type, uint32_t flags);
+	void UploadToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
+	void CpoyBufferToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
+	void DownloadFromBuffer(gs_buffer* source, uint32_t source_offset, gs_buffer* dest, uint32_t dest_offset);
+};
+
+struct GPUTextureRegion {
+	uint32_t mipLevelIndex;
+	uint32_t layerIndex;
+	uint32_t x;
+	uint32_t y;
+	uint32_t z;
+	uint32_t w;
+	uint32_t h;
+	uint32_t depth;
 };
 
 struct gs_texture : gs_obj {
-	gs_texture_type type;
-	uint32_t levels;
-	gs_color_format format;
+	gs_texture_type type = GS_TEXTURE_2D;
+	uint32_t layerCountOrDepth = 1;  // layer count for 2d, depth for 3d
+	uint32_t levels = 0;
+	int32_t sampleCount = 1;
+	gs_color_format format = GS_BGRA;
 
 	inline gs_texture(gs_texture_type type, uint32_t levels, gs_color_format format)
 		: type(type),
@@ -459,24 +497,8 @@ struct gs_texture : gs_obj {
 	}
 };
 
-struct gs_texture_subresource
-{
-	int32_t layer = 0;
-	int32_t level = 0;
-	int32_t depth = 1;
-	int32_t index = 0;
-
-	gs_staging_descriptor* rtvHandles = nullptr;  // depth
-	gs_staging_descriptor* dsvHandle = nullptr;
-
-	inline ~gs_texture_subresource() {
-		if (rtvHandles) {
-		}
-	}
-};
-
 struct gs_texture_2d : gs_texture {
-	gs_upload_buffer *upload_buffer;
+	gs_buffer *upload_buffer;
 
 	gs_staging_descriptor textureDescriptor;
 	ComPtr<ID3D12Resource> texture;
@@ -520,12 +542,12 @@ struct gs_texture_2d : gs_texture {
 				gs_staging_descriptor_release(renderTargetDescriptor + i);
 			if (renderTargetLinearDescriptor[i].cpuHandle.ptr != 0)
 				gs_staging_descriptor_release(renderTargetLinearDescriptor + i);
+
+			memset(&renderTargetDescriptor[i], 0, sizeof(renderTargetDescriptor));
+			memset(&renderTargetLinearDescriptor[i], 0, sizeof(renderTargetLinearDescriptor));
 		}
 
 		memset(&textureDescriptor, 0, sizeof(textureDescriptor));
-
-		memset(renderTargetDescriptor, 0, 6 * sizeof(renderTargetDescriptor));
-		memset(renderTargetLinearDescriptor, 0, 6 * sizeof(renderTargetLinearDescriptor));
 
 		texture.Release();
 	}
@@ -539,6 +561,9 @@ struct gs_texture_2d : gs_texture {
 	gs_texture_2d(gs_device_t *device, ID3D12Resource *nv12, uint32_t flags);
 	gs_texture_2d(gs_device_t *device, uint32_t handle, bool ntHandle = false);
 	gs_texture_2d(gs_device_t *device, ID3D12Resource *obj);
+
+	void UploadToTexture(gs_buffer *source, uint32_t source_offset, uint32_t source_pixels_per_row,
+			     uint32_t souce_rows_per_layer, gs_texture_2d *dest, GPUTextureRegion textureRegion);
 };
 
 struct gs_texture_3d : gs_texture {

@@ -125,27 +125,8 @@ void gs_swap_chain::InitTarget(uint32_t cx, uint32_t cy)
 	rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 	rtv.Texture2D.MipSlice = 0;
 
-	int32_t currentBackBufferIndex = swap->GetCurrentBackBufferIndex();
 
-	device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetDescriptor[0]);
-	device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetDescriptor[0].cpuHandle);
-
-	device->commandList->OMSetRenderTargets(1, &target.renderTargetDescriptor[0].cpuHandle, FALSE, NULL);
-	device->TransitionResource(
-		target.texture,
-		D3D12_RESOURCE_STATE_PRESENT,
-		D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-	/*if (target.dxgiFormatView == target.dxgiFormatViewLinear) {
-		target.renderTargetLinearDescriptor[0] = target.renderTargetDescriptor[0];
-	}
-	else {
-		rtv.Format = target.dxgiFormatViewLinear;
-		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetLinearDescriptor[0]);
-		device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetLinearDescriptor[0].cpuHandle);
-	}*/
-
-	/*for (int32_t i = 0; i < initData.num_backbuffers; ++i) {
+	for (int32_t i = 0; i < initData.num_backbuffers; ++i) {
 		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetDescriptor[i]);
 		device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetDescriptor[i].cpuHandle);
 		if (target.dxgiFormatView == target.dxgiFormatViewLinear) {
@@ -156,7 +137,7 @@ void gs_swap_chain::InitTarget(uint32_t cx, uint32_t cy)
 			device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetLinearDescriptor[i]);
 			device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetLinearDescriptor[i].cpuHandle);
 		}
-	}*/
+	}
 }
 
 void gs_swap_chain::InitZStencilBuffer(uint32_t cx, uint32_t cy)
@@ -247,18 +228,10 @@ gs_swap_chain::gs_swap_chain(gs_device *device, const gs_init_data *data)
 		flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 	}
 
-	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-
-	HRESULT hr = device->device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue));
-	if (FAILED(hr))
-		throw HRError("Failed to create command queue", hr);
-
 	space = make_swap_desc(device, swapDesc, &initData, effect, flags);
 
 	ComPtr<IDXGISwapChain> swap1;
-	hr = device->factory->CreateSwapChain(commandQueue, &swapDesc, swap1.Assign());
+	HRESULT hr = device->factory->CreateSwapChain(device->commandQueue, &swapDesc, swap1.Assign());
 	if (FAILED(hr))
 		throw HRError("Failed to create swap chain", hr);
 
@@ -622,13 +595,79 @@ void gs_device::ConvertBlendState(D3D12_BLEND_DESC& desc, const BlendState& bs)
 	}
 }
 
-gs_graphics_pipeline* gs_device::AddGraphicsPipeline() {
-	return nullptr;
+void gs_device::GeneratePipelineState(gs_graphics_pipeline& pipeline) {
+	D3D12_BLEND_DESC bs;
+	ConvertBlendState(bs, curBlendState);
+
+	D3D12_DEPTH_STENCIL_DESC zs;
+	ConvertZStencilState(zs, curZstencilState);
+
+	D3D12_RASTERIZER_DESC rs;
+	ConvertRasterState(rs, curRasterState);
+
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
+	memset(&psoDesc, 0, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+
+	psoDesc.BlendState = bs;
+	psoDesc.DepthStencilState = zs;
+	psoDesc.RasterizerState = rs;
+
+	psoDesc.VS.pShaderBytecode = curVertexShader->data.data();
+	psoDesc.VS.BytecodeLength = curVertexShader->data.size();
+
+	psoDesc.PS.pShaderBytecode = curPixelShader->data.data();
+	psoDesc.PS.BytecodeLength = curPixelShader->data.size();
+
+	psoDesc.pRootSignature = pipeline.curRootSignature.rootSignature;
+	psoDesc.PrimitiveTopologyType = pipeline.topologyType;
+
+	psoDesc.SampleMask = 0xFFFFFFFF;
+	psoDesc.SampleDesc.Count = 1;
+	psoDesc.SampleDesc.Quality = 0;
+
+	psoDesc.InputLayout.pInputElementDescs = curVertexShader->layoutData.data();
+	psoDesc.InputLayout.NumElements = curVertexShader->layoutData.size();
+
+	psoDesc.DSVFormat = pipeline.zsformat;
+	psoDesc.NumRenderTargets = 1;
+
+	psoDesc.RTVFormats[0] = pipeline.rtvformat;
+	
+	HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline.pipeline_state));
+	if (FAILED(hr))
+		throw HRError("create pipeline failed", hr);
 }
 
 void gs_device::UpdateGraphicsPipeline() {
+	D3D12_PRIMITIVE_TOPOLOGY_TYPE topology = ConvertD3D12Topology(curToplogy);
+	DXGI_FORMAT format = curFramebufferSrgb ? curRenderTarget->dxgiFormatViewLinear
+						: curRenderTarget->dxgiFormatView;
+	DXGI_FORMAT zsForamt = curZStencilBuffer ? curZStencilBuffer->dxgiFormat : DXGI_FORMAT_UNKNOWN;
 
+	auto iter = std::find_if(graphicsPipelines.begin(), graphicsPipelines.end(),
+				 [this, topology, zsForamt, format](const gs_graphics_pipeline &element) {
+					 return curBlendState == element.blendState &&
+						curRasterState == element.rasterState &&
+						curZstencilState == element.zstencilState &&
+						curVertexShader == element.vertexShader &&
+						curPixelShader == element.pixelShader &&
+						topology == element.topologyType && zsForamt == element.zsformat &&
+						format == element.rtvformat;
+				 });
+
+	if (iter == graphicsPipelines.end()) {
+		gs_graphics_pipeline pipeline(device.Get(), curBlendState, curRasterState, curZstencilState,
+					      curVertexShader, curPixelShader, topology, zsForamt, format);
+		GeneratePipelineState(pipeline);
+		curPipeline = pipeline;
+		graphicsPipelines.push_back(pipeline);
+		return;
+	}
+
+	curPipeline = (*iter);
 }
+
 
 void gs_device::UpdateViewProjMatrix()
 {
@@ -648,6 +687,23 @@ void gs_device::UpdateViewProjMatrix()
 }
 void gs_device::FlushOutputViews()
 {
+	if (curFramebufferInvalidate) {
+		D3D12_CPU_DESCRIPTOR_HANDLE* rtv = nullptr;
+		if (curRenderTarget) {
+			const int i = curRenderSide;
+			rtv = curFramebufferSrgb ? &curRenderTarget->renderTargetLinearDescriptor[i].cpuHandle
+				: &curRenderTarget->renderTargetDescriptor[i].cpuHandle;
+			if (!rtv->ptr) {
+				blog(LOG_ERROR, "device_draw (D3D11): texture is not a render target");
+				return;
+			}
+		}
+		D3D12_CPU_DESCRIPTOR_HANDLE* dsv = nullptr;
+		if (curZStencilBuffer)
+			dsv = &curZStencilBuffer->textureDescriptor.cpuHandle;
+		commandList->OMSetRenderTargets(1, rtv,false, dsv->ptr ? dsv : nullptr);
+		curFramebufferInvalidate = false;
+	}
 }
 
 gs_device::gs_device(uint32_t adapterIdx)
@@ -1604,7 +1660,7 @@ static void device_load_texture_internal(gs_device_t *device, gs_texture_t *tex,
 	device->WriteGPUDescriptor(heap, cpuHandles, device->curPixelShader->textureCount, &gpuBaseDescriptor);
 
 	device->commandList->SetGraphicsRootDescriptorTable(
-		device->curRootSignature->pixelTextureRootIndex, gpuBaseDescriptor);
+		device->curPipeline.curRootSignature.pixelTextureRootIndex, gpuBaseDescriptor);
 
 	memset(cpuHandles, 0, sizeof(cpuHandles));
 	heap = gs_acquire_gpu_descriptor_heap(device->device, device->gpuSamplerDescriptorPool,
@@ -1619,7 +1675,7 @@ static void device_load_texture_internal(gs_device_t *device, gs_texture_t *tex,
 	device->WriteGPUDescriptor(heap, cpuHandles, device->curPixelShader->samplerCount, &gpuBaseDescriptor);
 
 	device->commandList->SetGraphicsRootDescriptorTable(
-		device->curRootSignature->pixelSamplerRootIndex, gpuBaseDescriptor);
+		device->curPipeline.curRootSignature.pixelSamplerRootIndex, gpuBaseDescriptor);
 }
 
 void device_load_texture(gs_device_t *device, gs_texture_t *tex, int unit)
@@ -1969,8 +2025,17 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 
 		device->FlushOutputViews();
 
-		device->commandList->SetPipelineState(device->curPipeline->pipeline_state);
-		device->commandList->SetGraphicsRootSignature(device->curRootSignature->rootSignature);
+		D3D12_PRIMITIVE_TOPOLOGY newTopology = ConvertGSTopology(draw_mode);
+
+		if (device->curToplogy != newTopology) {
+			device->commandList->IASetPrimitiveTopology(newTopology);
+			device->curToplogy = newTopology;
+		}
+
+		device->UpdateGraphicsPipeline();
+
+		device->commandList->SetPipelineState(device->curPipeline.pipeline_state);
+		device->commandList->SetGraphicsRootSignature(device->curPipeline.curRootSignature.rootSignature);
 
 		float blendFactor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
@@ -1983,11 +2048,6 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 			gs_effect_update_params(effect);
 
 		device->LoadVertexBufferData();
-		//device->UpdateBlendState();
-		///device->UpdateRasterState();
-		//device->UpdateZStencilState();
-
-		// pipeline
 
 		device->UpdateViewProjMatrix();
 		device->curVertexShader->UploadParams();
@@ -2001,13 +2061,6 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 		blog(LOG_ERROR, "device_draw (D3D11): %s (%08lX)", error.str, error.hr);
 		LogD3D12ErrorDetails(error, device);
 		return;
-	}
-
-	D3D12_PRIMITIVE_TOPOLOGY newTopology = ConvertGSTopology(draw_mode);
-
-	if (device->curToplogy != newTopology) {
-		device->commandList->IASetPrimitiveTopology(newTopology);
-		device->curToplogy = newTopology;
 	}
 
 	//if (device->curIndexBuffer) {
@@ -2052,26 +2105,29 @@ void device_load_swapchain(gs_device_t *device, gs_swapchain_t *swapchain)
 
 void device_clear(gs_device_t *device, uint32_t clear_flags, const struct vec4 *color, float depth, uint8_t stencil)
 {
-	/*if (clear_flags & GS_CLEAR_COLOR) {
+	if (clear_flags & GS_CLEAR_COLOR) {
 		gs_texture_2d *const tex = device->curRenderTarget;
 		if (tex) {
 			const int side = device->curRenderSide;
-			ID3D11RenderTargetView *const rtv = device->curFramebufferSrgb ? tex->renderTargetLinear[side]
-										       : tex->renderTarget[side];
-			device->context->ClearRenderTargetView(rtv, color->ptr);
+			D3D12_CPU_DESCRIPTOR_HANDLE rtv = device->curFramebufferSrgb
+								  ? tex->renderTargetLinearDescriptor[side].cpuHandle
+								  : tex->renderTargetDescriptor[side].cpuHandle;
+			device->commandList->ClearRenderTargetView(rtv, color->ptr, 0, nullptr);
 		}
 	}
 
 	if (device->curZStencilBuffer) {
-		uint32_t flags = 0;
+		D3D12_CLEAR_FLAGS flags = D3D12_CLEAR_FLAG_DEPTH;
 		if ((clear_flags & GS_CLEAR_DEPTH) != 0)
-			flags |= D3D11_CLEAR_DEPTH;
+			flags |= D3D12_CLEAR_FLAG_DEPTH;
 		if ((clear_flags & GS_CLEAR_STENCIL) != 0)
-			flags |= D3D11_CLEAR_STENCIL;
+			flags |= D3D12_CLEAR_FLAG_STENCIL;
 
-		if (flags && device->curZStencilBuffer->view)
-			device->context->ClearDepthStencilView(device->curZStencilBuffer->view, flags, depth, stencil);
-	}*/
+		if (flags && device->curZStencilBuffer->textureDescriptor.cpuHandle.ptr)
+			device->commandList->ClearDepthStencilView(
+				device->curZStencilBuffer->textureDescriptor.cpuHandle, flags, depth, stencil, 0,
+				nullptr);
+	}
 }
 
 bool device_is_present_ready(gs_device_t *device)
@@ -2092,13 +2148,17 @@ void device_present(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	if (curSwapChain) {
-
 		device->TransitionResource(curSwapChain->target.texture, D3D12_RESOURCE_STATE_RENDER_TARGET,
 					   D3D12_RESOURCE_STATE_PRESENT);
 
-		device->commandList->Close();
-		curSwapChain->commandQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&device->commandList);
 
+
+
+		device->commandQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&device->commandList);
+
+
+		// device->commandList->OMSetRenderTargets(0, nullptr, nullptr);
+		device->curFramebufferInvalidate = true;
 
 		const UINT interval = curSwapChain->hWaitable ? 1 : 0;
 		const HRESULT hr = curSwapChain->swap->Present(interval, 0);
@@ -2114,7 +2174,7 @@ void device_present(gs_device_t *device)
 
 void device_flush(gs_device_t *device)
 {
-	//device->context->Flush();
+	// device->commandList->Flush();
 }
 
 void device_set_cull_mode(gs_device_t *device, enum gs_cull_mode mode)
@@ -2400,22 +2460,16 @@ enum gs_color_format gs_texture_get_color_format(const gs_texture_t *tex)
 
 bool gs_texture_map(gs_texture_t *tex, uint8_t **ptr, uint32_t *linesize)
 {
-	/*HRESULT hr;
-
 	if (tex->type != GS_TEXTURE_2D)
 		return false;
 
-	gs_texture_2d *tex2d = static_cast<gs_texture_2d *>(tex);
+	gs_texture_2d* tex2d = static_cast<gs_texture_2d*>(tex);
 
-	D3D11_MAPPED_SUBRESOURCE map;
-	hr = tex2d->device->context->Map(tex2d->texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &map);
-	if (FAILED(hr))
-		return false;
-
-	*ptr = (uint8_t *)map.pData;
+	D3D12_MEMCPY_DEST map;
+	bool ret = tex2d->Map(0, &map);
+	*ptr = (uint8_t*)map.pData;
 	*linesize = map.RowPitch;
-	return true;*/
-	return false;
+	return true;
 }
 
 void gs_texture_unmap(gs_texture_t *tex)

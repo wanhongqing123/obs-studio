@@ -20,8 +20,8 @@
 #define MAX_ROOT_SIGNATURE_PARAMETERS 64
 #define VIEW_GPU_DESCRIPTOR_COUNT 65536
 
-gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_vertex_shader *vertexShader_,
-						     gs_pixel_shader *pixelShader_) : vertexShader(vertexShader_), pixelShader(pixelShader_)
+gs_graphics_rootsignature::gs_graphics_rootsignature(ID3D12Device* device, gs_vertex_shader *vertexShader,
+						     gs_pixel_shader *pixelShader)
 {
 	D3D12_ROOT_PARAMETER rootParameters[MAX_ROOT_SIGNATURE_PARAMETERS];
 	D3D12_DESCRIPTOR_RANGE descriptorRanges[MAX_ROOT_SIGNATURE_PARAMETERS];
@@ -123,7 +123,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(gs_device *device, gs_verte
 		throw HRError(throwStr.c_str(), hr);
 	}
 
-	hr = device->device->CreateRootSignature(0, serializedRootSignature->GetBufferPointer(),
+	hr = device->CreateRootSignature(0, serializedRootSignature->GetBufferPointer(),
 						 serializedRootSignature->GetBufferSize(),
 						 IID_PPV_ARGS(&rootSignature));
 

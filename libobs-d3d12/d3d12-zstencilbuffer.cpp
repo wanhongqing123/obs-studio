@@ -28,7 +28,7 @@ void gs_zstencil_buffer::InitBuffer()
 	td.Alignment = 0;
 	td.DepthOrArraySize = 1;
 	td.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	td.Flags = D3D12_RESOURCE_FLAGS::D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+	td.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 	td.Format = dxgiFormat;
 	td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	td.MipLevels = 1;

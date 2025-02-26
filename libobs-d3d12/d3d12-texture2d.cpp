@@ -132,14 +132,36 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	if (FAILED(hr))
 		throw HRError("Failed to create 2D texture", hr);
 
-	if (isDynamic || data) {
-		auto desc = texture->GetDesc();
-	}
-
 	if (data) {
 		BackupTexture(data);
 		InitSRD(srd);
 	}
+
+	auto desc = texture->GetDesc();
+	uint64_t requiredSize = 0;
+	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> placedTextureDesc;
+	std::vector<uint32_t> numRows;
+	std::vector<uint64_t> rowSizeInBytes;
+
+	placedTextureDesc.resize(levels * layerCountOrDepth);
+
+	numRows.resize(levels * layerCountOrDepth);
+
+	rowSizeInBytes.resize(levels * layerCountOrDepth);
+
+	device->device->GetCopyableFootprints(&desc, 0, levels * layerCountOrDepth, 0, placedTextureDesc.data(),
+					      numRows.data(), rowSizeInBytes.data(), &requiredSize);
+
+	uint32_t bbp = gs_get_format_bpp(format);
+	uint32_t rowPitch = bbp * width  / 8;
+
+	uint64_t actually_size = rowPitch * height * levels * layerCountOrDepth;
+
+	requiredSize = (requiredSize + (D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1)) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
+
+	upload_buffer = new gs_buffer(device, requiredSize, gs_buffer_type_upload, 0);
+
+
 }
 
 void gs_texture_2d::InitResourceView()
@@ -322,4 +344,32 @@ void gs_texture_2d::UploadToTexture(gs_buffer* source, uint32_t source_offset, u
 	uint32_t souce_rows_per_layer, gs_texture_2d* dest, GPUTextureRegion textureRegion) {
 
 
+}
+
+bool gs_texture_2d::Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST* map)
+{
+	auto desc = texture->GetDesc();
+	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> placedTextureDesc;
+	std::vector<uint32_t> numRows;
+	std::vector<uint64_t> rowSizeInBytes;
+	placedTextureDesc.resize(levels * layerCountOrDepth);
+	numRows.resize(levels * layerCountOrDepth);
+	rowSizeInBytes.resize(levels * layerCountOrDepth);
+
+	device->device->GetCopyableFootprints(&desc, 0, levels * layerCountOrDepth, 0, placedTextureDesc.data(),
+					      numRows.data(), rowSizeInBytes.data(), nullptr);
+
+	uint8_t *pData = nullptr;
+	upload_buffer->resource->Map(0, nullptr, (void **)&pData);
+	map->pData = pData + placedTextureDesc[subresourceIndex].Offset;
+	map->RowPitch = placedTextureDesc[subresourceIndex].Footprint.RowPitch;
+	map->SlicePitch = placedTextureDesc[subresourceIndex].Footprint.RowPitch *
+		numRows[subresourceIndex];
+	return true;
+}
+
+
+void gs_texture_2d::Unmap(int32_t subresourceIndex) {
+	upload_buffer->resource->Unmap(subresourceIndex, nullptr);
+	// todo
 }

@@ -337,6 +337,24 @@ static inline D3D12_PRIMITIVE_TOPOLOGY ConvertGSTopology(gs_draw_mode mode)
 	return D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
 }
 
+static inline D3D12_PRIMITIVE_TOPOLOGY_TYPE ConvertD3D12Topology(D3D12_PRIMITIVE_TOPOLOGY tology)
+{
+	switch (tology) {
+	case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
+		return D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT;
+	case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
+		return D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
+	case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
+		return D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE;
+	case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
+		return D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+		return D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	}
+
+	return D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+}
+
 struct VBDataPtr {
 	gs_vb_data *data;
 
@@ -451,6 +469,8 @@ struct gs_buffer {
 
 	gs_device* device;
 	gs_buffer(gs_device *device, int32_t size, gs_buffer_type type, uint32_t flags);
+	inline ~gs_buffer() {}
+
 	void UploadToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
 	void CpoyBufferToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
 	void DownloadFromBuffer(gs_buffer* source, uint32_t source_offset, gs_buffer* dest, uint32_t dest_offset);
@@ -498,7 +518,7 @@ struct gs_texture : gs_obj {
 };
 
 struct gs_texture_2d : gs_texture {
-	gs_buffer *upload_buffer;
+	gs_buffer *upload_buffer = nullptr;
 
 	gs_staging_descriptor textureDescriptor;
 	ComPtr<ID3D12Resource> texture;
@@ -533,6 +553,11 @@ struct gs_texture_2d : gs_texture {
 	void BackupTexture(const uint8_t *const *data);
 	void GetSharedHandle(IDXGIResource *dxgi_res);
 
+	void UploadToTexture(gs_buffer* source, uint32_t source_offset, uint32_t source_pixels_per_row,
+		uint32_t souce_rows_per_layer, gs_texture_2d* dest, GPUTextureRegion textureRegion);
+	bool Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST* map);
+	void Unmap(int32_t subresourceIndex);
+
 	inline void Release() {
 		if (textureDescriptor.cpuHandle.ptr != 0)
 			gs_staging_descriptor_release(&textureDescriptor);
@@ -550,6 +575,11 @@ struct gs_texture_2d : gs_texture {
 		memset(&textureDescriptor, 0, sizeof(textureDescriptor));
 
 		texture.Release();
+
+		if (upload_buffer) {
+			delete upload_buffer;
+			upload_buffer = nullptr;
+		}
 	}
 
 	inline gs_texture_2d() : gs_texture(GS_TEXTURE_2D, 0, GS_UNKNOWN) {}
@@ -561,9 +591,6 @@ struct gs_texture_2d : gs_texture {
 	gs_texture_2d(gs_device_t *device, ID3D12Resource *nv12, uint32_t flags);
 	gs_texture_2d(gs_device_t *device, uint32_t handle, bool ntHandle = false);
 	gs_texture_2d(gs_device_t *device, ID3D12Resource *obj);
-
-	void UploadToTexture(gs_buffer *source, uint32_t source_offset, uint32_t source_pixels_per_row,
-			     uint32_t souce_rows_per_layer, gs_texture_2d *dest, GPUTextureRegion textureRegion);
 };
 
 struct gs_texture_3d : gs_texture {
@@ -815,7 +842,6 @@ struct gs_swap_chain : gs_obj {
 	gs_texture_2d target;
 	gs_zstencil_buffer zs;
 	ComPtr<IDXGISwapChain3> swap;
-	ComPtr<ID3D12CommandQueue> commandQueue;
 	HANDLE hWaitable = NULL;
 
 	void InitTarget(uint32_t cx, uint32_t cy);
@@ -840,8 +866,6 @@ struct gs_swap_chain : gs_obj {
 
 struct gs_graphics_rootsignature {
 	ComPtr<ID3D12RootSignature> rootSignature;
-	gs_vertex_shader* vertexShader = nullptr;
-	gs_pixel_shader* pixelShader = nullptr;
 
 	int32_t vertexUniform32BitBufferRootIndex = -1;
 
@@ -849,8 +873,12 @@ struct gs_graphics_rootsignature {
 	int32_t pixelTextureRootIndex = -1;
 	int32_t pixelUniform32BitBufferRootIndex = -1;
 
-	inline bool operator == (const gs_graphics_rootsignature& other) const {
-		return vertexShader == other.vertexShader && pixelShader == other.pixelShader;
+	inline bool operator==(const gs_graphics_rootsignature &other) const
+	{
+		return vertexUniform32BitBufferRootIndex == other.vertexUniform32BitBufferRootIndex &&
+		       pixelSamplerRootIndex == other.pixelSamplerRootIndex &&
+		       pixelTextureRootIndex == other.pixelTextureRootIndex &&
+		       pixelUniform32BitBufferRootIndex == other.pixelUniform32BitBufferRootIndex;
 	}
 
 	inline bool operator!=(const gs_graphics_rootsignature& other) const {
@@ -859,15 +887,13 @@ struct gs_graphics_rootsignature {
 
 	inline ~gs_graphics_rootsignature() {
 		rootSignature.Clear();
-		vertexShader = nullptr;
-		pixelShader = nullptr;
 		vertexUniform32BitBufferRootIndex = -1;
 		pixelSamplerRootIndex = -1;
 		pixelTextureRootIndex = -1;
 		pixelUniform32BitBufferRootIndex = -1;
 	}
-
-	gs_graphics_rootsignature(gs_device* device, gs_vertex_shader* vertexShader, gs_pixel_shader* pixelShader);
+	inline gs_graphics_rootsignature() {}
+	gs_graphics_rootsignature(ID3D12Device* device, gs_vertex_shader* vertexShader, gs_pixel_shader* pixelShader);
 };
 
 struct gs_vertex_buffer : gs_obj {
@@ -1066,22 +1092,37 @@ struct gs_monitor_color_info {
 
 struct gs_graphics_pipeline {
 	ComPtr<ID3D12PipelineState> pipeline_state = nullptr;
-	gs_graphics_rootsignature rootSignature;
 
 	BlendState blendState;
 	RasterState rasterState;
 	ZStencilState zstencilState;
 
-	inline bool operator==(const gs_graphics_pipeline& other) const
+	gs_vertex_shader *vertexShader = nullptr;
+	gs_pixel_shader *pixelShader = nullptr;
+
+	D3D12_PRIMITIVE_TOPOLOGY_TYPE topologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_UNDEFINED;
+	DXGI_FORMAT zsformat = DXGI_FORMAT_UNKNOWN;
+	DXGI_FORMAT rtvformat = DXGI_FORMAT_UNKNOWN;
+
+	gs_graphics_rootsignature curRootSignature;
+
+	inline gs_graphics_pipeline() {}
+
+	inline gs_graphics_pipeline(ID3D12Device *device, const BlendState &blend, const RasterState &raster,
+				    const ZStencilState &zs, gs_vertex_shader *vertexShader_,
+				    gs_pixel_shader *pixelShader_, D3D12_PRIMITIVE_TOPOLOGY_TYPE topology_,
+				    DXGI_FORMAT zsformat_, DXGI_FORMAT format)
+		: blendState(blend),
+		  rasterState(rasterState),
+		  zstencilState(zs),
+		  vertexShader(vertexShader_),
+		  pixelShader(pixelShader_),
+		  topologyType(topology_),
+		  zsformat(zsformat_),
+		  rtvformat(format),
+		  curRootSignature(device, vertexShader_, pixelShader_)
 	{
-		return rootSignature == other.rootSignature && blendState == other.blendState &&
-			rasterState == other.rasterState && zstencilState == other.zstencilState;
 	}
-
-	inline bool operator!=(const gs_graphics_pipeline& other) const {
-		return !(*this == other);
-	}
-
 };
 
 struct gs_device {
@@ -1123,11 +1164,10 @@ struct gs_device {
 	gs_gpu_descriptor_heap_pool* gpuSRVDescriptorPool;
 
 	D3D12_PRIMITIVE_TOPOLOGY curToplogy;
-	gs_graphics_pipeline* curPipeline;
-	gs_graphics_rootsignature* curRootSignature;
+	gs_graphics_pipeline curPipeline;
+	gs_graphics_rootsignature curRootSignature;
 
 	std::vector<gs_graphics_pipeline> graphicsPipelines;
-	std::vector<gs_graphics_rootsignature> graphicsRootSignatures;
 
 	gs_rect viewport;
 
@@ -1155,10 +1195,8 @@ struct gs_device {
 	void ConvertRasterState(D3D12_RASTERIZER_DESC& desc, const RasterState& rs);
 	void ConvertBlendState(D3D12_BLEND_DESC& desc, const BlendState& bs);
 
-	gs_graphics_pipeline* AddGraphicsPipeline();
+	void GeneratePipelineState(gs_graphics_pipeline& pipeline);
 	void UpdateGraphicsPipeline();
-
-	gs_graphics_rootsignature* AddGraphicsRootSignature();
 
 	void LoadVertexBufferData();
 

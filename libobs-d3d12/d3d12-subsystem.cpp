@@ -112,32 +112,31 @@ void gs_swap_chain::InitTarget(uint32_t cx, uint32_t cy)
 {
 	HRESULT hr;
 
-	target.width = cx;
-	target.height = cy;
-
-	hr = swap->GetBuffer(0, __uuidof(ID3D12Resource), (void **)target.texture.Assign());
-	if (FAILED(hr))
-		throw HRError("Failed to get swap buffer texture", hr);
-
-	D3D12_RENDER_TARGET_VIEW_DESC rtv;
-	memset(&rtv, 0, sizeof(rtv));
-	rtv.Format = target.dxgiFormatView;
-	rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-	rtv.Texture2D.MipSlice = 0;
-
-
 	for (int32_t i = 0; i < initData.num_backbuffers; ++i) {
-		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetDescriptor[i]);
-		device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetDescriptor[i].cpuHandle);
-		if (target.dxgiFormatView == target.dxgiFormatViewLinear) {
-			target.renderTargetLinearDescriptor[i] = target.renderTargetDescriptor[i];
+		hr = swap->GetBuffer(i, __uuidof(ID3D12Resource), (void **)target[i].texture.Assign());
+		if (FAILED(hr))
+			throw HRError("Failed to get swap buffer texture", hr);
+
+		target[i].width = cx;
+		target[i].height = cy;
+		D3D12_RENDER_TARGET_VIEW_DESC rtv;
+		memset(&rtv, 0, sizeof(rtv));
+		rtv.Format = target[i].dxgiFormatView;
+		rtv.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+		rtv.Texture2D.MipSlice = 0;
+		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target[i].renderTargetDescriptor[0]);
+		device->device->CreateRenderTargetView(target[i].texture, &rtv, target[i].renderTargetDescriptor[0].cpuHandle);
+		if (target[i].dxgiFormatView == target[i].dxgiFormatViewLinear) {
+			target[i].renderTargetLinearDescriptor[0] = target[i].renderTargetDescriptor[0];
 		}
 		else {
-			rtv.Format = target.dxgiFormatViewLinear;
-			device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target.renderTargetLinearDescriptor[i]);
-			device->device->CreateRenderTargetView(target.texture, &rtv, target.renderTargetLinearDescriptor[i].cpuHandle);
+			rtv.Format = target[i].dxgiFormatViewLinear;
+			device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &target[i].renderTargetLinearDescriptor[0]);
+			device->device->CreateRenderTargetView(target[i].texture, &rtv, target[i].renderTargetLinearDescriptor[0].cpuHandle);
 		}
 	}
+
+	currentBackBufferIndex = swap->GetCurrentBackBufferIndex();
 }
 
 void gs_swap_chain::InitZStencilBuffer(uint32_t cx, uint32_t cy)
@@ -156,8 +155,8 @@ void gs_swap_chain::Resize(uint32_t cx, uint32_t cy, gs_color_format format)
 {
 	RECT clientRect;
 	HRESULT hr;
-
-	target.Release();
+	for (int32_t i = 0; i < GS_MAX_TEXTURES; ++i)
+		target[i].Release();
 	zs.Clear();
 
 	initData.cx = cx;
@@ -185,9 +184,12 @@ void gs_swap_chain::Resize(uint32_t cx, uint32_t cy, gs_color_format format)
 			throw HRError("Failed to set color space", hr);
 	}
 
-	target.dxgiFormatResource = ConvertGSTextureFormatResource(format);
-	target.dxgiFormatView = dxgi_format;
-	target.dxgiFormatViewLinear = ConvertGSTextureFormatViewLinear(format);
+	for (int32_t i = 0; i < GS_MAX_TEXTURES; ++i) {
+		target[i].dxgiFormatResource = ConvertGSTextureFormatResource(format);
+		target[i].dxgiFormatView = dxgi_format;
+		target[i].dxgiFormatViewLinear = ConvertGSTextureFormatViewLinear(format);
+	}
+
 	InitTarget(cx, cy);
 	InitZStencilBuffer(cx, cy);
 }
@@ -196,13 +198,15 @@ void gs_swap_chain::Init()
 {
 	const gs_color_format format =
 		get_swap_format_from_space(get_next_space(device, hwnd, swapDesc.SwapEffect), initData.format);
+	for (int32_t i = 0; i < GS_MAX_TEXTURES; ++i) {
+		target[i].device = device;
+		target[i].isRenderTarget = true;
+		target[i].format = initData.format;
+		target[i].dxgiFormatResource = ConvertGSTextureFormatResource(format);
+		target[i].dxgiFormatView = ConvertGSTextureFormatView(format);
+		target[i].dxgiFormatViewLinear = ConvertGSTextureFormatViewLinear(format);
+	}
 
-	target.device = device;
-	target.isRenderTarget = true;
-	target.format = initData.format;
-	target.dxgiFormatResource = ConvertGSTextureFormatResource(format);
-	target.dxgiFormatView = ConvertGSTextureFormatView(format);
-	target.dxgiFormatViewLinear = ConvertGSTextureFormatViewLinear(format);
 	InitTarget(initData.cx, initData.cy);
 
 	zs.device = device;
@@ -701,7 +705,7 @@ void gs_device::FlushOutputViews()
 		D3D12_CPU_DESCRIPTOR_HANDLE* dsv = nullptr;
 		if (curZStencilBuffer)
 			dsv = &curZStencilBuffer->textureDescriptor.cpuHandle;
-		commandList->OMSetRenderTargets(1, rtv,false, dsv->ptr ? dsv : nullptr);
+		commandList->OMSetRenderTargets(1, rtv, false, dsv->ptr ? dsv : nullptr);
 		curFramebufferInvalidate = false;
 	}
 }
@@ -1342,8 +1346,8 @@ void device_update_color_space(gs_device_t *device)
 void device_get_size(const gs_device_t *device, uint32_t *cx, uint32_t *cy)
 {
 	if (device->curSwapChain) {
-		*cx = device->curSwapChain->target.width;
-		*cy = device->curSwapChain->target.height;
+		*cx = device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex].width;
+		*cy = device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex].height;
 	} else {
 		blog(LOG_ERROR, "device_get_size (D3D12): no active swap");
 		*cx = 0;
@@ -1354,7 +1358,7 @@ void device_get_size(const gs_device_t *device, uint32_t *cx, uint32_t *cy)
 uint32_t device_get_width(const gs_device_t *device)
 {
 	if (device->curSwapChain) {
-		return device->curSwapChain->target.width;
+		return device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex].width;
 	} else {
 		blog(LOG_ERROR, "device_get_size (D3D12): no active swap");
 		return 0;
@@ -1364,7 +1368,7 @@ uint32_t device_get_width(const gs_device_t *device)
 uint32_t device_get_height(const gs_device_t *device)
 {
 	if (device->curSwapChain) {
-		return device->curSwapChain->target.height;
+		return device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex].height;
 	} else {
 		blog(LOG_ERROR, "device_get_size (D3D12): no active swap");
 		return 0;
@@ -1631,6 +1635,11 @@ void device_load_indexbuffer(gs_device_t *device, gs_indexbuffer_t *indexbuffer)
 	if (device->curIndexBuffer == indexbuffer)
 		return;
 
+        //  view.BufferLocation = buffer->virtualAddress + binding->offset;
+	//view.SizeInBytes = buffer->container->size - binding->offset;
+	//view.Format = indexElementSize == SDL_GPU_INDEXELEMENTSIZE_16BIT ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
+
+	//ID3D12GraphicsCommandList_IASetIndexBuffer(d3d12CommandBuffer->graphicsCommandList, &view);
 	device->curIndexBuffer = indexbuffer;
 }
 
@@ -1778,7 +1787,7 @@ gs_shader_t *device_get_pixel_shader(const gs_device_t *device)
 
 gs_texture_t *device_get_render_target(const gs_device_t *device)
 {
-	if (device->curRenderTarget == &device->curSwapChain->target)
+	if (device->curRenderTarget == &device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex])
 		return NULL;
 
 	return device->curRenderTarget;
@@ -1797,9 +1806,13 @@ static void device_set_render_target_internal(gs_device_t *device, gs_texture_t 
 {
 	if (device->curSwapChain) {
 		if (!tex)
-			tex = &device->curSwapChain->target;
+			tex = &device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex];
 		if (!zstencil)
 			zstencil = &device->curSwapChain->zs;
+
+		device->TransitionResource(
+			device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	}
 
 	if (device->curRenderTarget == tex && device->curZStencilBuffer == zstencil) {
@@ -1836,12 +1849,16 @@ void device_set_cube_render_target(gs_device_t *device, gs_texture_t *tex, int s
 {
 	if (device->curSwapChain) {
 		if (!tex) {
-			tex = &device->curSwapChain->target;
+			tex = &device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex];
 			side = 0;
 		}
 
 		if (!zstencil)
 			zstencil = &device->curSwapChain->zs;
+
+		device->TransitionResource(
+			device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	}
 
 	if (device->curRenderTarget == tex && device->curRenderSide == side && device->curZStencilBuffer == zstencil)
@@ -2063,15 +2080,15 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 		return;
 	}
 
-	//if (device->curIndexBuffer) {
-	//	if (num_verts == 0)
-	//		num_verts = (uint32_t)device->curIndexBuffer->num;
-	//	device->commandList->DrawIndexed(num_verts, start_vert, 0);
-	//} else {
-	//	if (num_verts == 0)
-	//		num_verts = (uint32_t)device->curVertexBuffer->numVerts;
-	//	device->commandList->DrawIndexd(num_verts, start_vert);
-	//}
+	if (device->curIndexBuffer) {
+		if (num_verts == 0)
+			num_verts = (uint32_t)device->curIndexBuffer->num;
+		device->commandList->DrawIndexedInstanced(num_verts, 1, start_vert, 0, 0);
+	} else {
+		if (num_verts == 0)
+			num_verts = (uint32_t)device->curVertexBuffer->numVerts;
+		device->commandList->DrawInstanced(num_verts, 1, start_vert, 0);
+	}
 }
 
 void device_end_scene(gs_device_t *device)
@@ -2087,7 +2104,7 @@ void device_load_swapchain(gs_device_t *device, gs_swapchain_t *swapchain)
 	bool is_cube = device->curRenderTarget ? (device->curRenderTarget->type == GS_TEXTURE_CUBE) : false;
 
 	if (device->curSwapChain) {
-		if (target == &device->curSwapChain->target)
+		if (target == &device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex])
 			target = NULL;
 		if (zs == &device->curSwapChain->zs)
 			zs = NULL;
@@ -2148,22 +2165,15 @@ void device_present(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	if (curSwapChain) {
-		device->TransitionResource(curSwapChain->target.texture, D3D12_RESOURCE_STATE_RENDER_TARGET,
+		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture, D3D12_RESOURCE_STATE_RENDER_TARGET,
 					   D3D12_RESOURCE_STATE_PRESENT);
-
-
-
-
-		device->commandQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&device->commandList);
-
-
+		ID3D12CommandList* ppCommandLists[] = { device->commandList.Get() };
+		device->commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 		// device->commandList->OMSetRenderTargets(0, nullptr, nullptr);
 		device->curFramebufferInvalidate = true;
-
 		const UINT interval = curSwapChain->hWaitable ? 1 : 0;
 		const HRESULT hr = curSwapChain->swap->Present(interval, 0);
-		device->TransitionResource(curSwapChain->target.texture, D3D12_RESOURCE_STATE_PRESENT,
-			D3D12_RESOURCE_STATE_RENDER_TARGET);
+		curSwapChain->currentBackBufferIndex = curSwapChain->swap->GetCurrentBackBufferIndex();
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
 			// device->RebuildDevice();
 		}

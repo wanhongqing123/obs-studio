@@ -126,8 +126,7 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	}
 	
 	td.Flags = resFlags;
-	D3D12_RESOURCE_STATES initResState = D3D12_RESOURCE_STATE_COPY_DEST;
-	hr = device->device->CreateCommittedResource(&heapProp, heapFlags, &td, initResState, nullptr,
+	hr = device->device->CreateCommittedResource(&heapProp, heapFlags, &td, initialState, nullptr,
 						     IID_PPV_ARGS(&texture));
 	if (FAILED(hr))
 		throw HRError("Failed to create 2D texture", hr);

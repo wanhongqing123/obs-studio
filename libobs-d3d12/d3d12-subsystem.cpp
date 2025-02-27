@@ -245,21 +245,11 @@ gs_swap_chain::gs_swap_chain(gs_device *device, const gs_init_data *data)
 
 	/* Ignore Alt+Enter */
 	device->factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
-
-	if (flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) {
-		hWaitable = swap->GetFrameLatencyWaitableObject();
-		if (hWaitable == NULL) {
-			throw HRError("Failed to GetFrameLatencyWaitableObject", hr);
-		}
-	}
-
 	Init();
 }
 
 gs_swap_chain::~gs_swap_chain()
 {
-	if (hWaitable)
-		CloseHandle(hWaitable);
 }
 
 void gs_device::InitFactory()
@@ -491,6 +481,23 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 	stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_DSV] =
 		gs_staging_descriptor_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
+	gpuSamplerDescriptorPool = gs_gpu_descriptor_heap_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+	gpuSRVDescriptorPool = gs_gpu_descriptor_heap_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+        fenceValue = 1;
+
+        fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	if (fenceEvent == nullptr || FAILED(hr))
+		throw HRError("Failed to create fence or fenceEvent", hr);
+
+	gpu_descriptor_heap[0] = gs_acquire_gpu_descriptor_heap(device, gpuSRVDescriptorPool, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	gpu_descriptor_heap[1] = gs_acquire_gpu_descriptor_heap(device, gpuSamplerDescriptorPool, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+
+	ID3D12DescriptorHeap* rootDescriptorHeaps[2];
+	rootDescriptorHeaps[0] = gpu_descriptor_heap[0]->handle;
+	rootDescriptorHeaps[1] = gpu_descriptor_heap[1]->handle;
+
+	commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);
 
 	blog(LOG_INFO, "D3D12 loaded successfully, feature level used: %x", (unsigned int)levelUsed);
 }
@@ -672,6 +679,23 @@ void gs_device::UpdateGraphicsPipeline() {
 	curPipeline = (*iter);
 }
 
+void gs_device::ExecuteCommand() {
+	ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
+	commandList->Close();
+	commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	commandQueue->Signal(fence, fenceValue);
+	if (fence->GetCompletedValue() < fenceValue) {
+		fence->SetEventOnCompletion(fenceValue, fenceEvent);
+		WaitForSingleObject(fenceEvent, INFINITE);
+	}
+
+	fenceValue++;
+
+	// ID3D12DescriptorHeap* rootDescriptorHeaps[] = { data->srvDescriptorHeap, data->samplerDescriptorHeap };
+	// ID3D12CommandAllocator* commandAllocator = data->commandAllocators[data->currentBackBufferIndex];
+	//	ID3D12GraphicsCommandList2_SetDescriptorHeaps(data->commandList, 2, rootDescriptorHeaps);
+}
 
 void gs_device::UpdateViewProjMatrix()
 {
@@ -705,7 +729,10 @@ void gs_device::FlushOutputViews()
 		D3D12_CPU_DESCRIPTOR_HANDLE* dsv = nullptr;
 		if (curZStencilBuffer)
 			dsv = &curZStencilBuffer->textureDescriptor.cpuHandle;
-		commandList->OMSetRenderTargets(1, rtv, false, dsv->ptr ? dsv : nullptr);
+		if (dsv && dsv->ptr)
+			commandList->OMSetRenderTargets(1, rtv, false, dsv);
+		else
+			commandList->OMSetRenderTargets(1, rtv, false, nullptr);
 		curFramebufferInvalidate = false;
 	}
 }
@@ -1650,8 +1677,19 @@ static void device_load_texture_internal(gs_device_t *device, gs_texture_t *tex,
 
 	device->curTextures[unit] = tex;
 
-	gs_gpu_descriptor_heap *heap = gs_acquire_gpu_descriptor_heap(device->device, device->gpuSRVDescriptorPool,
-								      D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	if (device->gpu_descriptor_heap[0]->currentDescriptorIndex >= device->gpu_descriptor_heap[0]->maxDescriptors ||
+	    device->gpu_descriptor_heap[1]->currentDescriptorIndex >= device->gpu_descriptor_heap[1]->maxDescriptors) {
+		ID3D12DescriptorHeap *heaps[2];
+		device->gpu_descriptor_heap[0] = gs_acquire_gpu_descriptor_heap(
+			device->device, device->gpuSRVDescriptorPool, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		device->gpu_descriptor_heap[1] = gs_acquire_gpu_descriptor_heap(
+			device->device, device->gpuSamplerDescriptorPool, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+
+		heaps[0] = device->gpu_descriptor_heap[0]->handle;
+		heaps[1] = device->gpu_descriptor_heap[1]->handle;
+
+		device->commandList->SetDescriptorHeaps(2, heaps);
+	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandles[GS_MAX_TEXTURES];
 	for (int32_t i = 0; i < GS_MAX_TEXTURES; i += 1) {
@@ -1665,15 +1703,13 @@ static void device_load_texture_internal(gs_device_t *device, gs_texture_t *tex,
 		cpuHandles[i] = curTexture->textureDescriptor.cpuHandle;
 	}
 
-	D3D12_GPU_DESCRIPTOR_HANDLE gpuBaseDescriptor;
-	device->WriteGPUDescriptor(heap, cpuHandles, device->curPixelShader->textureCount, &gpuBaseDescriptor);
+	D3D12_GPU_DESCRIPTOR_HANDLE gpuBaseDescriptor = { 0 };
+	device->WriteGPUDescriptor(device->gpu_descriptor_heap[0], cpuHandles, device->curPixelShader->textureCount, &gpuBaseDescriptor);
 
 	device->commandList->SetGraphicsRootDescriptorTable(
 		device->curPipeline.curRootSignature.pixelTextureRootIndex, gpuBaseDescriptor);
 
 	memset(cpuHandles, 0, sizeof(cpuHandles));
-	heap = gs_acquire_gpu_descriptor_heap(device->device, device->gpuSamplerDescriptorPool,
-					      D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 	for (int32_t i = 0; i < GS_MAX_TEXTURES; i += 1) {
 		if (!device->curSamplers[i])
 			continue;
@@ -1681,7 +1717,7 @@ static void device_load_texture_internal(gs_device_t *device, gs_texture_t *tex,
 		cpuHandles[i] = device->curSamplers[i]->samplerDescriptor->cpuHandle;
 	}
 
-	device->WriteGPUDescriptor(heap, cpuHandles, device->curPixelShader->samplerCount, &gpuBaseDescriptor);
+	device->WriteGPUDescriptor(device->gpu_descriptor_heap[1], cpuHandles, device->curPixelShader->samplerCount, &gpuBaseDescriptor);
 
 	device->commandList->SetGraphicsRootDescriptorTable(
 		device->curPipeline.curRootSignature.pixelSamplerRootIndex, gpuBaseDescriptor);
@@ -1733,7 +1769,19 @@ void device_load_vertexshader(gs_device_t *device, gs_shader_t *vertshader)
 static inline void clear_textures(gs_device_t *device)
 {
 	memset(device->curTextures, 0, sizeof(device->curTextures));
-	//device->commandList->set
+	gs_gpu_descriptor_heap_release(device->gpu_descriptor_heap[0]);
+	gs_gpu_descriptor_heap_release(device->gpu_descriptor_heap[1]);
+
+	device->gpu_descriptor_heap[0] = gs_acquire_gpu_descriptor_heap(device->device, device->gpuSRVDescriptorPool,
+									D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	device->gpu_descriptor_heap[1] = gs_acquire_gpu_descriptor_heap(
+		device->device, device->gpuSamplerDescriptorPool, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+
+	ID3D12DescriptorHeap *rootDescriptorHeaps[2];
+	rootDescriptorHeaps[0] = device->gpu_descriptor_heap[0]->handle;
+	rootDescriptorHeaps[1] = device->gpu_descriptor_heap[1]->handle;
+
+	device->commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);
 }
 
 void device_load_pixelshader(gs_device_t *device, gs_shader_t *pixelshader)
@@ -1787,7 +1835,8 @@ gs_shader_t *device_get_pixel_shader(const gs_device_t *device)
 
 gs_texture_t *device_get_render_target(const gs_device_t *device)
 {
-	if (device->curRenderTarget == &device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex])
+	if (device->curSwapChain &&
+	    device->curRenderTarget == &device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex])
 		return NULL;
 
 	return device->curRenderTarget;
@@ -2089,6 +2138,8 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 			num_verts = (uint32_t)device->curVertexBuffer->numVerts;
 		device->commandList->DrawInstanced(num_verts, 1, start_vert, 0);
 	}
+
+	device->ExecuteCommand();
 }
 
 void device_end_scene(gs_device_t *device)
@@ -2151,9 +2202,23 @@ bool device_is_present_ready(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	bool ready = curSwapChain != nullptr;
+	return ready;
 	if (ready) {
-		const HANDLE hWaitable = curSwapChain->hWaitable;
-		ready = (hWaitable == NULL) || WaitForSingleObject(hWaitable, 0) == WAIT_OBJECT_0;
+		const uint64_t curfenceValue = device->fenceValue;
+		HRESULT hr = (device->commandQueue->Signal(device->fence.Get(), curfenceValue));
+
+		if (FAILED(hr))
+			throw HRError("fence Signal failed", hr);
+
+		device->fenceValue++;
+
+		// Wait until the previous frame is finished.
+		if (device->fence->GetCompletedValue() < curfenceValue) {
+			hr = (device->fence->SetEventOnCompletion(curfenceValue, device->fenceEvent));
+			if (FAILED(hr))
+				throw HRError("fence Completion failed", hr);
+			WaitForSingleObject(device->fenceEvent, INFINITE);
+		}
 	} else {
 		blog(LOG_WARNING, "device_is_present_ready (D3D11): No active swap");
 	}
@@ -2168,14 +2233,29 @@ void device_present(gs_device_t *device)
 		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture, D3D12_RESOURCE_STATE_RENDER_TARGET,
 					   D3D12_RESOURCE_STATE_PRESENT);
 		ID3D12CommandList* ppCommandLists[] = { device->commandList.Get() };
+		device->commandList->Close();
 		device->commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-		// device->commandList->OMSetRenderTargets(0, nullptr, nullptr);
 		device->curFramebufferInvalidate = true;
-		const UINT interval = curSwapChain->hWaitable ? 1 : 0;
-		const HRESULT hr = curSwapChain->swap->Present(interval, 0);
+		const HRESULT hr = curSwapChain->swap->Present(1, 0);
+		// Wait for the GPU and move to the next frame
+		device->commandQueue->Signal(device->fence, device->fenceValue);
+
+		if (device->fence->GetCompletedValue() < device->fenceValue) {
+			device->fence->SetEventOnCompletion(device->fenceValue, device->fenceEvent);
+			WaitForSingleObjectEx(device->fenceEvent, INFINITE, FALSE);
+		}
+
+		device->fenceValue++;
 		curSwapChain->currentBackBufferIndex = curSwapChain->swap->GetCurrentBackBufferIndex();
+
+
+		// Reset the command allocator and command list, and transition back to render target
+		device->commandAllocator->Reset();
+		device->commandList->Reset(device->commandAllocator, NULL);
+
+		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture, D3D12_RESOURCE_STATE_PRESENT,
+			D3D12_RESOURCE_STATE_RENDER_TARGET);
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
-			// device->RebuildDevice();
 		}
 	} else {
 		blog(LOG_WARNING, "device_present (D3D12): No active swap");

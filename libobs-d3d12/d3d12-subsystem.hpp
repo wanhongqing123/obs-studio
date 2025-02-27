@@ -842,7 +842,6 @@ struct gs_swap_chain : gs_obj {
 	gs_texture_2d target[GS_MAX_TEXTURES];
 	gs_zstencil_buffer zs;
 	ComPtr<IDXGISwapChain3> swap;
-	HANDLE hWaitable = NULL;
 	int32_t currentBackBufferIndex = 0;
 
 	void InitTarget(uint32_t cx, uint32_t cy);
@@ -855,10 +854,6 @@ struct gs_swap_chain : gs_obj {
 		for (int32_t i = 0; i < GS_MAX_TEXTURES; ++i)
 			target[i].Release();
 		zs.Release();
-		if (hWaitable) {
-			CloseHandle(hWaitable);
-			hWaitable = NULL;
-		}
 		swap.Clear();
 	}
 
@@ -1134,6 +1129,10 @@ struct gs_device {
 	ComPtr<ID3D12CommandQueue> commandQueue;
 	ComPtr<ID3D12CommandAllocator> commandAllocator;
 	ComPtr<ID3D12GraphicsCommandList2> commandList;
+	ComPtr<ID3D12Fence> fence;
+	uint64_t fenceValue = 1;
+	HANDLE fenceEvent = nullptr;
+
 	uint32_t adpIdx = 0;
 	bool nv12Supported = false;
 	bool p010Supported = false;
@@ -1162,8 +1161,10 @@ struct gs_device {
 	BlendState curBlendState;
 
 	gs_staging_descriptor_pool* stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
-	gs_gpu_descriptor_heap_pool* gpuSamplerDescriptorPool;
-	gs_gpu_descriptor_heap_pool* gpuSRVDescriptorPool;
+	gs_gpu_descriptor_heap_pool* gpuSamplerDescriptorPool = nullptr;
+	gs_gpu_descriptor_heap_pool* gpuSRVDescriptorPool = nullptr;
+
+	gs_gpu_descriptor_heap* gpu_descriptor_heap[2]; // 0 view 1 sampler
 
 	D3D12_PRIMITIVE_TOPOLOGY curToplogy;
 	gs_graphics_pipeline curPipeline;
@@ -1199,6 +1200,7 @@ struct gs_device {
 
 	void GeneratePipelineState(gs_graphics_pipeline& pipeline);
 	void UpdateGraphicsPipeline();
+	void ExecuteCommand();
 
 	void LoadVertexBufferData();
 

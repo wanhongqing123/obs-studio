@@ -723,6 +723,7 @@ struct gs_shader : gs_obj {
 	size_t constantSize;
 
 	std::vector<uint8_t> data;
+	std::string actuallyShaderString;
 
 	inline void UpdateParam(std::vector<uint8_t> &constData, gs_shader_param &param, bool &upload);
 	void UploadParams();

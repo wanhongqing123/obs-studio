@@ -619,6 +619,11 @@ void gs_device::GeneratePipelineState(gs_graphics_pipeline& pipeline) {
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
 	memset(&psoDesc, 0, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+	psoDesc.NodeMask = 1;
+	psoDesc.SampleMask = 0xFFFFFFFFu;
+	psoDesc.SampleDesc.Count = 1;
+	psoDesc.SampleDesc.Quality = 0;
+	psoDesc.InputLayout.NumElements = 0;
 
 	psoDesc.BlendState = bs;
 	psoDesc.DepthStencilState = zs;
@@ -633,10 +638,6 @@ void gs_device::GeneratePipelineState(gs_graphics_pipeline& pipeline) {
 	psoDesc.pRootSignature = pipeline.curRootSignature.rootSignature;
 	psoDesc.PrimitiveTopologyType = pipeline.topologyType;
 
-	psoDesc.SampleMask = 0xFFFFFFFF;
-	psoDesc.SampleDesc.Count = 1;
-	psoDesc.SampleDesc.Quality = 0;
-
 	psoDesc.InputLayout.pInputElementDescs = curVertexShader->layoutData.data();
 	psoDesc.InputLayout.NumElements = curVertexShader->layoutData.size();
 
@@ -644,7 +645,9 @@ void gs_device::GeneratePipelineState(gs_graphics_pipeline& pipeline) {
 	psoDesc.NumRenderTargets = 1;
 
 	psoDesc.RTVFormats[0] = pipeline.rtvformat;
-	
+
+	psoDesc.DepthStencilState.DepthEnable = (psoDesc.DSVFormat == DXGI_FORMAT_UNKNOWN);
+
 	HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline.pipeline_state));
 	if (FAILED(hr))
 		throw HRError("create pipeline failed", hr);
@@ -734,6 +737,13 @@ void gs_device::FlushOutputViews()
 		else
 			commandList->OMSetRenderTargets(1, rtv, false, nullptr);
 		curFramebufferInvalidate = false;
+
+		commandList->Close();
+		ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
+		commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+		commandAllocator->Reset();
+		commandList->Reset(commandAllocator, nullptr);
 	}
 }
 
@@ -2139,7 +2149,7 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 		device->commandList->DrawInstanced(num_verts, 1, start_vert, 0);
 	}
 
-	device->ExecuteCommand();
+	// device->ExecuteCommand();
 }
 
 void device_end_scene(gs_device_t *device)
@@ -2264,7 +2274,7 @@ void device_present(gs_device_t *device)
 
 void device_flush(gs_device_t *device)
 {
-	// device->commandList->Flush();
+	blog(LOG_WARNING, "device_present (D3D12): No active swap");
 }
 
 void device_set_cull_mode(gs_device_t *device, enum gs_cull_mode mode)

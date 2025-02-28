@@ -62,6 +62,7 @@ gs_vertex_shader::gs_vertex_shader(gs_device_t* device, const char* file, const 
 	GetBuffersExpected(layoutData);
 	BuildConstantBuffer();
 
+	actuallyShaderString = outputString;
 	Compile(outputString.c_str(), file, "vs_5_0", shaderBlob.Assign());
 
 	data.resize(shaderBlob->GetBufferSize());
@@ -99,7 +100,7 @@ gs_pixel_shader::gs_pixel_shader(gs_device_t* device, const char* file, const ch
 	samplerCount = samplers.size();
 
 	BuildConstantBuffer();
-
+	actuallyShaderString = outputString;
 	Compile(outputString.c_str(), file, "ps_5_0", shaderBlob.Assign());
 
 	data.resize(shaderBlob->GetBufferSize());
@@ -215,50 +216,7 @@ void gs_shader::Compile(const char* shaderString, const char* file, const char* 
 		throw "No shader string specified";
 
 	size_t shaderStrLen = strlen(shaderString);
-	uint64_t hash = fnv1a_hash(shaderString, shaderStrLen);
-	snprintf(hashstr, sizeof(hashstr), "%02llx", hash);
-
-	BPtr program_data = os_get_program_data_path_ptr("obs-studio/shader-cache");
-	auto cachePath = std::filesystem::u8path(program_data.Get()) / hashstr;
-	// Increment if on-disk format changes
-	cachePath += ".v2";
-
-	std::fstream cacheFile;
-	cacheFile.exceptions(std::fstream::badbit | std::fstream::eofbit);
-
-	if (std::filesystem::exists(cachePath) && !std::filesystem::is_empty(cachePath))
-		cacheFile.open(cachePath, std::ios::in | std::ios::binary | std::ios::ate);
-
-	if (cacheFile.is_open()) {
-		uint64_t checksum;
-
-		try {
-			std::streampos len = cacheFile.tellg();
-			// Not enough data for checksum + shader
-			if (len <= sizeof(checksum))
-				throw std::length_error("File truncated");
-
-			cacheFile.seekg(0, std::ios::beg);
-
-			len -= sizeof(checksum);
-			D3DCreateBlob(len, shader);
-			cacheFile.read((char*)(*shader)->GetBufferPointer(), len);
-			uint64_t calculated_checksum = fnv1a_hash((char*)(*shader)->GetBufferPointer(), len);
-
-			cacheFile.read((char*)&checksum, sizeof(checksum));
-			if (calculated_checksum != checksum)
-				throw std::exception("Checksum mismatch");
-
-			is_cached = true;
-		}
-		catch (const std::exception& e) {
-			// Something went wrong reading the cache file, delete it
-			blog(LOG_WARNING, "Loading shader cache file failed with \"%s\": %s", e.what(), file);
-			cacheFile.close();
-			std::filesystem::remove(cachePath);
-		}
-	}
-
+	
 	if (!is_cached) {
 		hr = D3DCompile(shaderString, shaderStrLen, file, NULL, NULL, "main", target,
 			0, 0, shader, errorsBlob.Assign());
@@ -267,22 +225,6 @@ void gs_shader::Compile(const char* shaderString, const char* file, const char* 
 				throw ShaderError(errorsBlob, hr);
 			else
 				throw HRError("Failed to compile shader", hr);
-		}
-
-		cacheFile.open(cachePath, std::ios::out | std::ios::binary);
-		if (cacheFile.is_open()) {
-			try {
-				uint64_t calculated_checksum =
-					fnv1a_hash((char*)(*shader)->GetBufferPointer(), (*shader)->GetBufferSize());
-
-				cacheFile.write((char*)(*shader)->GetBufferPointer(), (*shader)->GetBufferSize());
-				cacheFile.write((char*)&calculated_checksum, sizeof(calculated_checksum));
-			}
-			catch (const std::exception& e) {
-				blog(LOG_WARNING, "Writing shader cache file failed with \"%s\": %s", e.what(), file);
-				cacheFile.close();
-				std::filesystem::remove(cachePath);
-			}
 		}
 	}
 

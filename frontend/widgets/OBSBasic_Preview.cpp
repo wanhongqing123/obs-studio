@@ -166,7 +166,7 @@ void OBSBasic::RenderMain(void *data, uint32_t, uint32_t)
 		if (source)
 			obs_source_video_render(source);
 	} else {
-		obs_render_main_texture_src_color_only();
+		// obs_render_main_texture_src_color_only();
 	}
 	gs_load_vertexbuffer(nullptr);
 
@@ -178,19 +178,19 @@ void OBSBasic::RenderMain(void *data, uint32_t, uint32_t)
 	uint32_t targetCX = window->previewCX;
 	uint32_t targetCY = window->previewCY;
 
-	if (window->drawSafeAreas) {
+	//if (window->drawSafeAreas) {
 		RenderSafeAreas(window->actionSafeMargin, targetCX, targetCY);
 		RenderSafeAreas(window->graphicsSafeMargin, targetCX, targetCY);
 		RenderSafeAreas(window->fourByThreeSafeMargin, targetCX, targetCY);
 		RenderSafeAreas(window->leftLine, targetCX, targetCY);
 		RenderSafeAreas(window->topLine, targetCX, targetCY);
 		RenderSafeAreas(window->rightLine, targetCX, targetCY);
-	}
+	//}
 
-	window->ui->preview->DrawSceneEditing();
+	//window->ui->preview->DrawSceneEditing();
 
-	if (window->drawSpacingHelpers)
-		window->ui->preview->DrawSpacingHelpers();
+	//if (window->drawSpacingHelpers)
+	//	window->ui->preview->DrawSpacingHelpers();
 
 	/* --------------------------------------- */
 

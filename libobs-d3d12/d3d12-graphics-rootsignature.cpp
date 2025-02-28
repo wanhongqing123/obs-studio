@@ -87,9 +87,9 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(ID3D12Device* device, gs_ve
 
 	if (pixelShader->uniform32BitBufferCount > 0) {
 		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 		rootParameter.Constants.Num32BitValues = pixelShader->uniform32BitBufferCount;
-		rootParameter.Constants.ShaderRegister = vertexShader->uniform32BitBufferCount;
+		rootParameter.Constants.ShaderRegister = 0;
 		rootParameter.Constants.RegisterSpace = 0;
 		rootParameters[parameterCount] = rootParameter;
 		pixelUniform32BitBufferRootIndex = parameterCount;

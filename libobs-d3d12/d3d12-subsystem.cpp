@@ -174,15 +174,14 @@ void gs_swap_chain::Resize(uint32_t cx, uint32_t cy, gs_color_format format)
 	hr = swap->ResizeBuffers(swapDesc.BufferCount, cx, cy, dxgi_format, swapDesc.Flags);
 	if (FAILED(hr))
 		throw HRError("Failed to resize swap buffers", hr);
-	ComQIPtr<IDXGISwapChain3> swap3 = swap;
-	if (swap3) {
-		const DXGI_COLOR_SPACE_TYPE dxgi_space = (format == GS_RGBA16F)
+
+	const DXGI_COLOR_SPACE_TYPE dxgi_space = (format == GS_RGBA16F)
 								 ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
 								 : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
-		hr = swap3->SetColorSpace1(dxgi_space);
-		if (FAILED(hr))
+	hr = swap->SetColorSpace1(dxgi_space);
+	if (FAILED(hr))
 			throw HRError("Failed to set color space", hr);
-	}
+
 
 	for (int32_t i = 0; i < GS_MAX_TEXTURES; ++i) {
 		target[i].dxgiFormatResource = ConvertGSTextureFormatResource(format);
@@ -439,20 +438,6 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 	if (FAILED(hr))
 		throw UnsupportedHWError("Failed to create device", hr);
 
-	/*ID3D12InfoQueue* infoQueue = NULL;
-	D3D12_MESSAGE_SEVERITY severities[] = { D3D12_MESSAGE_SEVERITY_INFO };
-	D3D12_INFO_QUEUE_FILTER filter;
-
-	device->QueryInterface(IID_PPV_ARGS(&infoQueue));
-
-	memset(&filter, 0, sizeof(filter));
-	filter.DenyList.NumSeverities = 1;
-	filter.DenyList.pSeverityList = severities;
-	infoQueue->PushStorageFilter(&filter);
-
-	infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
-	infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);*/
-
 	D3D12_COMMAND_QUEUE_DESC queueDesc;
 	memset(&queueDesc, 0, sizeof(queueDesc));
 
@@ -484,8 +469,6 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 	gpuSamplerDescriptorPool = gs_gpu_descriptor_heap_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 	gpuSRVDescriptorPool = gs_gpu_descriptor_heap_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-        fenceValue = 1;
-
         fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 	if (fenceEvent == nullptr || FAILED(hr))
 		throw HRError("Failed to create fence or fenceEvent", hr);
@@ -493,12 +476,8 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 	gpu_descriptor_heap[0] = gs_acquire_gpu_descriptor_heap(device, gpuSRVDescriptorPool, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	gpu_descriptor_heap[1] = gs_acquire_gpu_descriptor_heap(device, gpuSamplerDescriptorPool, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
 
-	ID3D12DescriptorHeap* rootDescriptorHeaps[2];
-	rootDescriptorHeaps[0] = gpu_descriptor_heap[0]->handle;
-	rootDescriptorHeaps[1] = gpu_descriptor_heap[1]->handle;
 
-	commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);
-
+	fastClearSupported = FastClearSupported(desc.VendorId, driverVersion);
 	blog(LOG_INFO, "D3D12 loaded successfully, feature level used: %x", (unsigned int)levelUsed);
 }
 
@@ -583,7 +562,7 @@ void gs_device::ConvertRasterState(D3D12_RASTERIZER_DESC& desc, const RasterStat
 	desc.FrontCounterClockwise = true;
 	desc.FillMode = D3D12_FILL_MODE_SOLID;
 	desc.CullMode = ConvertGSCullMode(rs.cullMode);
-	desc.DepthClipEnable = true;
+	desc.DepthClipEnable = rs.scissorEnabled;
 }
 
 void gs_device::ConvertBlendState(D3D12_BLEND_DESC& desc, const BlendState& bs)
@@ -620,7 +599,7 @@ void gs_device::GeneratePipelineState(gs_graphics_pipeline& pipeline) {
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
 	memset(&psoDesc, 0, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
 	psoDesc.NodeMask = 1;
-	psoDesc.SampleMask = 0xFFFFFFFFu;
+	psoDesc.SampleMask = 0xFFFFFFFFF;
 	psoDesc.SampleDesc.Count = 1;
 	psoDesc.SampleDesc.Quality = 0;
 	psoDesc.InputLayout.NumElements = 0;
@@ -682,24 +661,6 @@ void gs_device::UpdateGraphicsPipeline() {
 	curPipeline = (*iter);
 }
 
-void gs_device::ExecuteCommand() {
-	ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
-	commandList->Close();
-	commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-	commandQueue->Signal(fence, fenceValue);
-	if (fence->GetCompletedValue() < fenceValue) {
-		fence->SetEventOnCompletion(fenceValue, fenceEvent);
-		WaitForSingleObject(fenceEvent, INFINITE);
-	}
-
-	fenceValue++;
-
-	// ID3D12DescriptorHeap* rootDescriptorHeaps[] = { data->srvDescriptorHeap, data->samplerDescriptorHeap };
-	// ID3D12CommandAllocator* commandAllocator = data->commandAllocators[data->currentBackBufferIndex];
-	//	ID3D12GraphicsCommandList2_SetDescriptorHeaps(data->commandList, 2, rootDescriptorHeaps);
-}
-
 void gs_device::UpdateViewProjMatrix()
 {
 	gs_matrix_get(&curViewMatrix);
@@ -736,14 +697,12 @@ void gs_device::FlushOutputViews()
 			commandList->OMSetRenderTargets(1, rtv, false, dsv);
 		else
 			commandList->OMSetRenderTargets(1, rtv, false, nullptr);
+
+		ID3D12DescriptorHeap* rootDescriptorHeaps[2];
+		rootDescriptorHeaps[0] = gpu_descriptor_heap[0]->handle;
+		rootDescriptorHeaps[1] = gpu_descriptor_heap[1]->handle;
+		commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);
 		curFramebufferInvalidate = false;
-
-		commandList->Close();
-		ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
-		commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-		commandAllocator->Reset();
-		commandList->Reset(commandAllocator, nullptr);
 	}
 }
 
@@ -759,18 +718,6 @@ gs_device::gs_device(uint32_t adapterIdx)
 		curTextures[i] = NULL;
 		curSamplers[i] = NULL;
 	}
-
-	//ID3D12Debug* debugInterface = NULL;
-	//D3D12GetDebugInterface(IID_PPV_ARGS(&debugInterface));
-	//debugInterface->EnableDebugLayer();
-
-	//IDXGIInfoQueue* dxgiInfoQueue = NULL;
-	//IDXGIDebug* dxgiDebug;
-	//DXGIGetDebugInterface1(0, IID_PPV_ARGS(&dxgiDebug));
-	//DXGIGetDebugInterface1(0, IID_PPV_ARGS(& dxgiInfoQueue));
-	//static const GUID SDL_DXGI_DEBUG_ALL = { 0xe48ae283, 0xda80, 0x490b, { 0x87, 0xe6, 0x43, 0xe9, 0xa9, 0xcf, 0xda, 0x8 } };
-	//dxgiInfoQueue->SetBreakOnSeverity(SDL_DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, TRUE);
-	//dxgiInfoQueue->SetBreakOnSeverity(SDL_DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
 
 	InitFactory();
 	InitAdapter(adapterIdx);
@@ -1360,7 +1307,7 @@ void device_resize(gs_device_t *device, uint32_t cx, uint32_t cy)
 
 	const enum gs_color_space next_space =
 		get_next_space(device, device->curSwapChain->hwnd, device->curSwapChain->swapDesc.SwapEffect);
-	device_resize_internal(device, cx, cy, next_space);
+	// device_resize_internal(device, cx, cy, next_space);
 }
 
 enum gs_color_space device_get_color_space(gs_device_t *device)
@@ -1638,13 +1585,9 @@ enum gs_texture_type device_get_texture_type(const gs_texture_t *texture)
 
 void gs_device::LoadVertexBufferData()
 {
-	if (curVertexBuffer == lastVertexBuffer && curVertexShader == lastVertexShader)
-		return;
-
 	int32_t numViews = 0;
 
-
-	D3D12_VERTEX_BUFFER_VIEW views[16];
+	D3D12_VERTEX_BUFFER_VIEW views[16] = { 0 };
 	if (curVertexBuffer && curVertexShader) {
 		numViews = curVertexBuffer->MakeBufferList(curVertexShader, views);
 	} else {
@@ -1652,6 +1595,8 @@ void gs_device::LoadVertexBufferData()
 	}
 
 	commandList->IASetVertexBuffers(0, numViews, views);
+
+	currentVertexBuffer++;
 
 	lastVertexBuffer = curVertexBuffer;
 	lastVertexShader = curVertexShader;
@@ -1791,7 +1736,7 @@ static inline void clear_textures(gs_device_t *device)
 	rootDescriptorHeaps[0] = device->gpu_descriptor_heap[0]->handle;
 	rootDescriptorHeaps[1] = device->gpu_descriptor_heap[1]->handle;
 
-	device->commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);
+	// device->commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);
 }
 
 void device_load_pixelshader(gs_device_t *device, gs_shader_t *pixelshader)
@@ -1868,10 +1813,6 @@ static void device_set_render_target_internal(gs_device_t *device, gs_texture_t 
 			tex = &device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex];
 		if (!zstencil)
 			zstencil = &device->curSwapChain->zs;
-
-		device->TransitionResource(
-			device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
-			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	}
 
 	if (device->curRenderTarget == tex && device->curZStencilBuffer == zstencil) {
@@ -1914,10 +1855,6 @@ void device_set_cube_render_target(gs_device_t *device, gs_texture_t *tex, int s
 
 		if (!zstencil)
 			zstencil = &device->curSwapChain->zs;
-
-		device->TransitionResource(
-			device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
-			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	}
 
 	if (device->curRenderTarget == tex && device->curRenderSide == side && device->curZStencilBuffer == zstencil)
@@ -2101,12 +2038,7 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 
 		device->FlushOutputViews();
 
-		D3D12_PRIMITIVE_TOPOLOGY newTopology = ConvertGSTopology(draw_mode);
-
-		if (device->curToplogy != newTopology) {
-			device->commandList->IASetPrimitiveTopology(newTopology);
-			device->curToplogy = newTopology;
-		}
+		device->curToplogy = ConvertGSTopology(draw_mode);
 
 		device->UpdateGraphicsPipeline();
 
@@ -2129,6 +2061,8 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 		device->curVertexShader->UploadParams();
 		device->curPixelShader->UploadParams();
 
+		device->commandList->IASetPrimitiveTopology(device->curToplogy);
+
 	} catch (const char *error) {
 		blog(LOG_ERROR, "device_draw (D3D11): %s", error);
 		return;
@@ -2142,14 +2076,12 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 	if (device->curIndexBuffer) {
 		if (num_verts == 0)
 			num_verts = (uint32_t)device->curIndexBuffer->num;
-		device->commandList->DrawIndexedInstanced(num_verts, 1, start_vert, 0, 0);
+		 device->commandList->DrawIndexedInstanced(num_verts, 1, start_vert, 0, 0);
 	} else {
 		if (num_verts == 0)
 			num_verts = (uint32_t)device->curVertexBuffer->numVerts;
 		device->commandList->DrawInstanced(num_verts, 1, start_vert, 0);
 	}
-
-	// device->ExecuteCommand();
 }
 
 void device_end_scene(gs_device_t *device)
@@ -2169,6 +2101,7 @@ void device_load_swapchain(gs_device_t *device, gs_swapchain_t *swapchain)
 			target = NULL;
 		if (zs == &device->curSwapChain->zs)
 			zs = NULL;
+		device->curSwapChain->currentBackBufferIndex = device->curSwapChain->swap->GetCurrentBackBufferIndex();
 	}
 
 	device->curSwapChain = swapchain;
@@ -2212,23 +2145,25 @@ bool device_is_present_ready(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	bool ready = curSwapChain != nullptr;
-	return ready;
 	if (ready) {
 		const uint64_t curfenceValue = device->fenceValue;
-		HRESULT hr = (device->commandQueue->Signal(device->fence.Get(), curfenceValue));
-
-		if (FAILED(hr))
-			throw HRError("fence Signal failed", hr);
-
-		device->fenceValue++;
-
+		device->commandQueue->Signal(device->fence, curfenceValue);
 		// Wait until the previous frame is finished.
 		if (device->fence->GetCompletedValue() < curfenceValue) {
-			hr = (device->fence->SetEventOnCompletion(curfenceValue, device->fenceEvent));
+			HRESULT hr = (device->fence->SetEventOnCompletion(curfenceValue, device->fenceEvent));
 			if (FAILED(hr))
 				throw HRError("fence Completion failed", hr);
 			WaitForSingleObject(device->fenceEvent, INFINITE);
 		}
+		device->fenceValue++;
+		device->curSwapChain->currentBackBufferIndex = device->curSwapChain->swap->GetCurrentBackBufferIndex();
+
+		device->commandAllocator->Reset();
+		device->commandList->Reset(device->commandAllocator, nullptr);
+
+		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+					   D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
 	} else {
 		blog(LOG_WARNING, "device_is_present_ready (D3D11): No active swap");
 	}
@@ -2240,32 +2175,21 @@ void device_present(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	if (curSwapChain) {
-		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture, D3D12_RESOURCE_STATE_RENDER_TARGET,
-					   D3D12_RESOURCE_STATE_PRESENT);
-		ID3D12CommandList* ppCommandLists[] = { device->commandList.Get() };
-		device->commandList->Close();
+		// device->commandList->OMSetRenderTargets(0, nullptr, false, nullptr);
+		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+					   D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+		ID3D12CommandList *ppCommandLists[] = {device->commandList.Get()};
+		HRESULT hr = device->commandList->Close();
+		if (FAILED(hr)) {
+			HRESULT hr1 = device->device->GetDeviceRemovedReason();
+			blog(LOG_WARNING, "device_present (D3D12): No active swap");
+		}
 		device->commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 		device->curFramebufferInvalidate = true;
-		const HRESULT hr = curSwapChain->swap->Present(1, 0);
-		// Wait for the GPU and move to the next frame
-		device->commandQueue->Signal(device->fence, device->fenceValue);
-
-		if (device->fence->GetCompletedValue() < device->fenceValue) {
-			device->fence->SetEventOnCompletion(device->fenceValue, device->fenceEvent);
-			WaitForSingleObjectEx(device->fenceEvent, INFINITE, FALSE);
-		}
-
-		device->fenceValue++;
-		curSwapChain->currentBackBufferIndex = curSwapChain->swap->GetCurrentBackBufferIndex();
-
-
-		// Reset the command allocator and command list, and transition back to render target
-		device->commandAllocator->Reset();
-		device->commandList->Reset(device->commandAllocator, NULL);
-
-		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture, D3D12_RESOURCE_STATE_PRESENT,
-			D3D12_RESOURCE_STATE_RENDER_TARGET);
+		hr = curSwapChain->swap->Present(1, 0);
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+			HRESULT hr1 = device->device->GetDeviceRemovedReason();
+			blog(LOG_WARNING, "device_present (D3D12): No active swap");
 		}
 	} else {
 		blog(LOG_WARNING, "device_present (D3D12): No active swap");

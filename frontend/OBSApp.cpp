@@ -960,6 +960,13 @@ void OBSApp::AppInit()
 
 const char *OBSApp::GetRenderModule() const
 {
+	if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0)
+	{
+		HMODULE hModule = LoadLibrary(L"C:\\Program Files\\Microsoft PIX\\2501.30\\WinPixGpuCapturer.dll");
+		if (hModule) {
+			blog(LOG_INFO, "Load WinPixgpuCapture Success");
+		}
+	}
 	const char *renderer = config_get_string(appConfig, "Video", "Renderer");
 	return "libobs-d3d12.dll";
 	return (astrcmpi(renderer, "Direct3D 11") == 0) ? DL_D3D11 : DL_OPENGL;

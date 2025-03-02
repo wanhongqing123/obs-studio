@@ -166,7 +166,7 @@ void OBSBasic::RenderMain(void *data, uint32_t, uint32_t)
 		if (source)
 			obs_source_video_render(source);
 	} else {
-		// obs_render_main_texture_src_color_only();
+		 //obs_render_main_texture_src_color_only();
 	}
 	gs_load_vertexbuffer(nullptr);
 

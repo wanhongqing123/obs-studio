@@ -171,21 +171,12 @@ void gs_shader::BuildConstantBuffer()
 		if (param.arrayCount)
 			size *= param.arrayCount;
 
-		/* checks to see if this constant needs to start at a new
-		 * register */
-		if (size && (constantSize & 31) != 0) {
-			size_t alignMax = (constantSize + 31) & ~31;
-
-			if ((size + constantSize) > alignMax)
-				constantSize = alignMax;
-		}
-
 		param.pos = constantSize;
 		constantSize += size;
 	}
 
 	if (constantSize) {
-		uniform32BitBufferCount = ((constantSize + 31) & 0xFFFFFFE0) / 4; /* align */
+		uniform32BitBufferCount = constantSize / 4; /* align */
 	}
 
 	for (size_t i = 0; i < params.size(); i++)
@@ -291,16 +282,16 @@ void gs_shader::UploadParams()
 	if (constData.size() != constantSize)
 		throw "Invalid constant data size given to shader";
 
-	if (upload) {
-		gs_graphics_rootsignature *root_sig = &device->curPipeline.curRootSignature;
-		if (type == GS_SHADER_VERTEX)
-			device->commandList->SetGraphicsRoot32BitConstants(
+	
+	gs_graphics_rootsignature *root_sig = &device->curPipeline.curRootSignature;
+	if (type == GS_SHADER_VERTEX)
+		device->commandList->SetGraphicsRoot32BitConstants(
 				root_sig->vertexUniform32BitBufferRootIndex, uniform32BitBufferCount, constData.data(), 0);
 
-		if (type == GS_SHADER_VERTEX)
-			device->commandList->SetGraphicsRoot32BitConstants(
+	if (type == GS_SHADER_PIXEL)
+		device->commandList->SetGraphicsRoot32BitConstants(
 				root_sig->pixelUniform32BitBufferRootIndex, uniform32BitBufferCount, constData.data(), 0);
-	}
+	
 }
 
 void gs_shader_destroy(gs_shader_t* shader)

@@ -40,10 +40,7 @@ void gs_vertex_buffer::FlushBuffer(ID3D12Resource *buffer, void *array, size_t e
 	memset(&range, 0, sizeof(D3D12_RANGE));
 	HRESULT hr;
 
-	hr = buffer->Map(0, &range, &vtx_resource);
-	if (FAILED(hr)) 
-		throw HRError("Failed to map buffer", hr);
-
+	buffer->Map(0, &range, &vtx_resource);
 	memcpy(vtx_resource, array, elementSize * vbd.data->num);
 	buffer->Unmap(0, &range);
 }
@@ -103,10 +100,21 @@ void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVert
 
 	hr = device->device->CreateCommittedResource(&vbufferHeapProps, D3D12_HEAP_FLAG_NONE, &vbufferDesc,
 						     D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(buffer));
-
-	HRESULT test = device->device->GetDeviceRemovedReason();
 	if (FAILED(hr))
 		throw HRError("Failed to create buffer", hr);
+
+	if (array) {
+		UINT8* pVertexDataBegin;
+		D3D12_RANGE readRange;
+		memset(&readRange, 0, sizeof(D3D12_RANGE));
+		(*buffer)->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin));
+		memcpy(pVertexDataBegin, array, numVerts * elementSize);
+		(*buffer)->Unmap(0, nullptr);
+	}
+
+	view->BufferLocation = (*buffer)->GetGPUVirtualAddress();
+	view->StrideInBytes = elementSize;
+	view->SizeInBytes = numVerts * elementSize;
 }
 
 void gs_vertex_buffer::BuildBuffers()
@@ -150,6 +158,15 @@ gs_vertex_buffer::gs_vertex_buffer(gs_device_t *device, struct gs_vb_data *data,
 		throw "Cannot initialize vertex buffer with 0 vertices";
 	if (!data->points)
 		throw "No points specified for vertex buffer";
+	vertexBufferData.clear();
+
+	for (int32_t i = 0; i < data->num; ++i) {
+		vertexBufferData.push_back(data->points[i]);
+		data->points[i].x /= 2;
+		data->points[i].y /= 2;
+		data->points[i].z /= 2;
+		data->points[i].w /= 2;
+	}
 
 	BuildBuffers();
 }

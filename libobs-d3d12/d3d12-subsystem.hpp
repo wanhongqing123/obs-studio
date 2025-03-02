@@ -915,6 +915,8 @@ struct gs_vertex_buffer : gs_obj {
 	size_t numVerts;
 	std::vector<size_t> uvSizes;
 
+	std::vector<struct vec3> vertexBufferData;
+
 	void FlushBuffer(ID3D12Resource *buffer, void *array, size_t elementSize);
 
 	UINT MakeBufferList(gs_vertex_shader *shader, D3D12_VERTEX_BUFFER_VIEW *views);
@@ -1111,7 +1113,7 @@ struct gs_graphics_pipeline {
 				    gs_pixel_shader *pixelShader_, D3D12_PRIMITIVE_TOPOLOGY_TYPE topology_,
 				    DXGI_FORMAT zsformat_, DXGI_FORMAT format)
 		: blendState(blend),
-		  rasterState(rasterState),
+		  rasterState(raster),
 		  zstencilState(zs),
 		  vertexShader(vertexShader_),
 		  pixelShader(pixelShader_),
@@ -1131,7 +1133,7 @@ struct gs_device {
 	ComPtr<ID3D12CommandAllocator> commandAllocator;
 	ComPtr<ID3D12GraphicsCommandList2> commandList;
 	ComPtr<ID3D12Fence> fence;
-	uint64_t fenceValue = 1;
+	uint64_t fenceValue = 0;
 	HANDLE fenceEvent = nullptr;
 
 	uint32_t adpIdx = 0;
@@ -1156,6 +1158,8 @@ struct gs_device {
 
 	gs_vertex_buffer *lastVertexBuffer = nullptr;
 	gs_vertex_shader *lastVertexShader = nullptr;
+
+	int32_t currentVertexBuffer = 0;
 
 	ZStencilState curZstencilState;
 	RasterState curRasterState;
@@ -1201,7 +1205,6 @@ struct gs_device {
 
 	void GeneratePipelineState(gs_graphics_pipeline& pipeline);
 	void UpdateGraphicsPipeline();
-	void ExecuteCommand();
 
 	void LoadVertexBufferData();
 

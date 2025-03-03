@@ -104,10 +104,10 @@ void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVert
 		throw HRError("Failed to create buffer", hr);
 
 	if (array) {
-		UINT8* pVertexDataBegin;
+		UINT8 *pVertexDataBegin;
 		D3D12_RANGE readRange;
 		memset(&readRange, 0, sizeof(D3D12_RANGE));
-		(*buffer)->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin));
+		(*buffer)->Map(0, &readRange, reinterpret_cast<void **>(&pVertexDataBegin));
 		memcpy(pVertexDataBegin, array, numVerts * elementSize);
 		(*buffer)->Unmap(0, nullptr);
 	}

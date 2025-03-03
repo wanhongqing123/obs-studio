@@ -70,7 +70,7 @@ gs_sampler_state::gs_sampler_state(gs_device_t *device, const gs_sampler_info *i
 {
 	HRESULT hr;
 
-	samplerDescriptor = (gs_staging_descriptor*)bmalloc(sizeof(samplerDescriptor));
+	samplerDescriptor = (gs_staging_descriptor *)bmalloc(sizeof(samplerDescriptor));
 	device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, samplerDescriptor);
 
 	vec4 v4;

@@ -960,6 +960,7 @@ void OBSApp::AppInit()
 
 const char *OBSApp::GetRenderModule() const
 {
+	// D3D12 debug with PIX
 	if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0)
 	{
 		HMODULE hModule = LoadLibrary(L"C:\\Program Files\\Microsoft PIX\\2501.30\\WinPixGpuCapturer.dll");

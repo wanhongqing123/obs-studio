@@ -20,7 +20,7 @@
 #define MAX_ROOT_SIGNATURE_PARAMETERS 64
 #define VIEW_GPU_DESCRIPTOR_COUNT 65536
 
-gs_graphics_rootsignature::gs_graphics_rootsignature(ID3D12Device* device, gs_vertex_shader *vertexShader,
+gs_graphics_rootsignature::gs_graphics_rootsignature(ID3D12Device *device, gs_vertex_shader *vertexShader,
 						     gs_pixel_shader *pixelShader)
 {
 	D3D12_ROOT_PARAMETER rootParameters[MAX_ROOT_SIGNATURE_PARAMETERS];
@@ -111,8 +111,8 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(ID3D12Device* device, gs_ve
 
 	ID3DBlob *serializedRootSignature;
 	ID3DBlob *errorBlob;
-	hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1,
-						 &serializedRootSignature, &errorBlob);
+	hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &serializedRootSignature,
+					 &errorBlob);
 
 	if (FAILED(hr)) {
 		std::string throwStr = "Failed SerializeRootSignature errStr:";
@@ -124,8 +124,7 @@ gs_graphics_rootsignature::gs_graphics_rootsignature(ID3D12Device* device, gs_ve
 	}
 
 	hr = device->CreateRootSignature(0, serializedRootSignature->GetBufferPointer(),
-						 serializedRootSignature->GetBufferSize(),
-						 IID_PPV_ARGS(&rootSignature));
+					 serializedRootSignature->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
 
 	if (FAILED(hr))
 		throw HRError("Failed to create rootSignature", hr);

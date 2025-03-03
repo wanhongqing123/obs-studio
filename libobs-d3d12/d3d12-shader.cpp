@@ -28,10 +28,10 @@
 #include <fstream>
 #include <d3dcompiler.h>
 
-void gs_vertex_shader::GetBuffersExpected(const std::vector<D3D12_INPUT_ELEMENT_DESC>& inputs)
+void gs_vertex_shader::GetBuffersExpected(const std::vector<D3D12_INPUT_ELEMENT_DESC> &inputs)
 {
 	for (size_t i = 0; i < inputs.size(); i++) {
-		const D3D12_INPUT_ELEMENT_DESC& input = inputs[i];
+		const D3D12_INPUT_ELEMENT_DESC &input = inputs[i];
 		if (strcmp(input.SemanticName, "NORMAL") == 0)
 			hasNormals = true;
 		else if (strcmp(input.SemanticName, "TANGENT") == 0)
@@ -43,12 +43,12 @@ void gs_vertex_shader::GetBuffersExpected(const std::vector<D3D12_INPUT_ELEMENT_
 	}
 }
 
-gs_vertex_shader::gs_vertex_shader(gs_device_t* device, const char* file, const char* shaderString)
+gs_vertex_shader::gs_vertex_shader(gs_device_t *device, const char *file, const char *shaderString)
 	: gs_shader(device, gs_type::gs_vertex_shader, GS_SHADER_VERTEX),
-	hasNormals(false),
-	hasColors(false),
-	hasTangents(false),
-	nTexUnits(0)
+	  hasNormals(false),
+	  hasColors(false),
+	  hasTangents(false),
+	  nTexUnits(0)
 {
 	ShaderProcessor processor(device);
 	ComPtr<ID3D10Blob> shaderBlob;
@@ -72,7 +72,7 @@ gs_vertex_shader::gs_vertex_shader(gs_device_t* device, const char* file, const 
 	world = gs_shader_get_param_by_name(this, "World");
 }
 
-gs_pixel_shader::gs_pixel_shader(gs_device_t* device, const char* file, const char* shaderString)
+gs_pixel_shader::gs_pixel_shader(gs_device_t *device, const char *file, const char *shaderString)
 	: gs_shader(device, gs_type::gs_pixel_shader, GS_SHADER_PIXEL)
 {
 	ShaderProcessor processor(device);
@@ -121,7 +121,7 @@ gs_pixel_shader::gs_pixel_shader(gs_device_t* device, const char* file, const ch
 void gs_shader::BuildConstantBuffer()
 {
 	for (size_t i = 0; i < params.size(); i++) {
-		gs_shader_param& param = params[i];
+		gs_shader_param &param = params[i];
 		size_t size = 0;
 
 		switch (param.type) {
@@ -167,7 +167,7 @@ void gs_shader::BuildConstantBuffer()
 		gs_shader_set_default(&params[i]);
 }
 
-static uint64_t fnv1a_hash(const char* str, size_t len)
+static uint64_t fnv1a_hash(const char *str, size_t len)
 {
 	const uint64_t FNV_OFFSET = 14695981039346656037ULL;
 	const uint64_t FNV_PRIME = 1099511628211ULL;
@@ -179,7 +179,7 @@ static uint64_t fnv1a_hash(const char* str, size_t len)
 	return hash;
 }
 
-void gs_shader::Compile(const char* shaderString, const char* file, const char* target, ID3D10Blob** shader)
+void gs_shader::Compile(const char *shaderString, const char *file, const char *target, ID3D10Blob **shader)
 {
 	ComPtr<ID3D10Blob> errorsBlob;
 	HRESULT hr;
@@ -191,10 +191,10 @@ void gs_shader::Compile(const char* shaderString, const char* file, const char* 
 		throw "No shader string specified";
 
 	size_t shaderStrLen = strlen(shaderString);
-	
+
 	if (!is_cached) {
 		hr = D3DCompile(shaderString, shaderStrLen, file, NULL, NULL, "main", target,
-			D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, shader, errorsBlob.Assign());
+				D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, shader, errorsBlob.Assign());
 		if (FAILED(hr)) {
 			if (errorsBlob != NULL && errorsBlob->GetBufferSize())
 				throw ShaderError(errorsBlob, hr);
@@ -215,7 +215,7 @@ void gs_shader::Compile(const char* shaderString, const char* file, const char* 
 #endif
 }
 
-inline void gs_shader::UpdateParam(std::vector<uint8_t>& constData, gs_shader_param& param, bool& upload)
+inline void gs_shader::UpdateParam(std::vector<uint8_t> &constData, gs_shader_param &param, bool &upload)
 {
 	if (param.type != GS_SHADER_PARAM_TEXTURE) {
 		if (!param.curValue.size())
@@ -236,12 +236,11 @@ inline void gs_shader::UpdateParam(std::vector<uint8_t>& constData, gs_shader_pa
 			param.changed = false;
 		}
 
-	}
-	else if (param.curValue.size() == sizeof(struct gs_shader_texture)) {
+	} else if (param.curValue.size() == sizeof(struct gs_shader_texture)) {
 		struct gs_shader_texture shader_tex;
 		memcpy(&shader_tex, param.curValue.data(), sizeof(shader_tex));
 		if (param.nextSampler) {
-			gs_staging_descriptor* state = param.nextSampler->samplerDescriptor;
+			gs_staging_descriptor *state = param.nextSampler->samplerDescriptor;
 			device->curSamplers[param.textureID] = param.nextSampler;
 			param.nextSampler = nullptr;
 		}
@@ -266,37 +265,35 @@ void gs_shader::UploadParams()
 	if (constData.size() != constantSize)
 		throw "Invalid constant data size given to shader";
 
-	
 	gs_graphics_rootsignature *root_sig = &device->curPipeline.curRootSignature;
 	if (type == GS_SHADER_VERTEX)
 		device->commandList->SetGraphicsRoot32BitConstants(root_sig->vertexUniform32BitBufferRootIndex,
 								   uniform32BitBufferCount, constData.data(), 0);
 
 	if (type == GS_SHADER_PIXEL)
-		device->commandList->SetGraphicsRoot32BitConstants(
-				root_sig->pixelUniform32BitBufferRootIndex, uniform32BitBufferCount, constData.data(), 0);
-	
+		device->commandList->SetGraphicsRoot32BitConstants(root_sig->pixelUniform32BitBufferRootIndex,
+								   uniform32BitBufferCount, constData.data(), 0);
 }
 
-void gs_shader_destroy(gs_shader_t* shader)
+void gs_shader_destroy(gs_shader_t *shader)
 {
 	delete shader;
 }
 
-int gs_shader_get_num_params(const gs_shader_t* shader)
+int gs_shader_get_num_params(const gs_shader_t *shader)
 {
 	return (int)shader->params.size();
 }
 
-gs_sparam_t* gs_shader_get_param_by_idx(gs_shader_t* shader, uint32_t param)
+gs_sparam_t *gs_shader_get_param_by_idx(gs_shader_t *shader, uint32_t param)
 {
 	return &shader->params[param];
 }
 
-gs_sparam_t* gs_shader_get_param_by_name(gs_shader_t* shader, const char* name)
+gs_sparam_t *gs_shader_get_param_by_name(gs_shader_t *shader, const char *name)
 {
 	for (size_t i = 0; i < shader->params.size(); i++) {
-		gs_shader_param& param = shader->params[i];
+		gs_shader_param &param = shader->params[i];
 		if (strcmp(param.name.c_str(), name) == 0)
 			return &param;
 	}
@@ -304,23 +301,23 @@ gs_sparam_t* gs_shader_get_param_by_name(gs_shader_t* shader, const char* name)
 	return NULL;
 }
 
-gs_sparam_t* gs_shader_get_viewproj_matrix(const gs_shader_t* shader)
+gs_sparam_t *gs_shader_get_viewproj_matrix(const gs_shader_t *shader)
 {
 	if (shader->type != GS_SHADER_VERTEX)
 		return NULL;
 
-	return static_cast<const gs_vertex_shader*>(shader)->viewProj;
+	return static_cast<const gs_vertex_shader *>(shader)->viewProj;
 }
 
-gs_sparam_t* gs_shader_get_world_matrix(const gs_shader_t* shader)
+gs_sparam_t *gs_shader_get_world_matrix(const gs_shader_t *shader)
 {
 	if (shader->type != GS_SHADER_VERTEX)
 		return NULL;
 
-	return static_cast<const gs_vertex_shader*>(shader)->world;
+	return static_cast<const gs_vertex_shader *>(shader)->world;
 }
 
-void gs_shader_get_param_info(const gs_sparam_t* param, struct gs_shader_param_info* info)
+void gs_shader_get_param_info(const gs_sparam_t *param, struct gs_shader_param_info *info)
 {
 	if (!param)
 		return;
@@ -329,7 +326,7 @@ void gs_shader_get_param_info(const gs_sparam_t* param, struct gs_shader_param_i
 	info->type = param->type;
 }
 
-static inline void shader_setval_inline(gs_shader_param* param, const void* data, size_t size)
+static inline void shader_setval_inline(gs_shader_param *param, const void *data, size_t size)
 {
 	assert(param);
 	if (!param)
@@ -345,66 +342,66 @@ static inline void shader_setval_inline(gs_shader_param* param, const void* data
 	}
 }
 
-void gs_shader_set_bool(gs_sparam_t* param, bool val)
+void gs_shader_set_bool(gs_sparam_t *param, bool val)
 {
 	int b_val = (int)val;
 	shader_setval_inline(param, &b_val, sizeof(int));
 }
 
-void gs_shader_set_float(gs_sparam_t* param, float val)
+void gs_shader_set_float(gs_sparam_t *param, float val)
 {
 	shader_setval_inline(param, &val, sizeof(float));
 }
 
-void gs_shader_set_int(gs_sparam_t* param, int val)
+void gs_shader_set_int(gs_sparam_t *param, int val)
 {
 	shader_setval_inline(param, &val, sizeof(int));
 }
 
-void gs_shader_set_matrix3(gs_sparam_t* param, const struct matrix3* val)
+void gs_shader_set_matrix3(gs_sparam_t *param, const struct matrix3 *val)
 {
 	struct matrix4 mat;
 	matrix4_from_matrix3(&mat, val);
 	shader_setval_inline(param, &mat, sizeof(matrix4));
 }
 
-void gs_shader_set_matrix4(gs_sparam_t* param, const struct matrix4* val)
+void gs_shader_set_matrix4(gs_sparam_t *param, const struct matrix4 *val)
 {
 	shader_setval_inline(param, val, sizeof(matrix4));
 }
 
-void gs_shader_set_vec2(gs_sparam_t* param, const struct vec2* val)
+void gs_shader_set_vec2(gs_sparam_t *param, const struct vec2 *val)
 {
 	shader_setval_inline(param, val, sizeof(vec2));
 }
 
-void gs_shader_set_vec3(gs_sparam_t* param, const struct vec3* val)
+void gs_shader_set_vec3(gs_sparam_t *param, const struct vec3 *val)
 {
 	shader_setval_inline(param, val, sizeof(float) * 3);
 }
 
-void gs_shader_set_vec4(gs_sparam_t* param, const struct vec4* val)
+void gs_shader_set_vec4(gs_sparam_t *param, const struct vec4 *val)
 {
 	shader_setval_inline(param, val, sizeof(vec4));
 }
 
-void gs_shader_set_texture(gs_sparam_t* param, gs_texture_t* val)
+void gs_shader_set_texture(gs_sparam_t *param, gs_texture_t *val)
 {
-	shader_setval_inline(param, &val, sizeof(gs_texture_t*));
+	shader_setval_inline(param, &val, sizeof(gs_texture_t *));
 }
 
-void gs_shader_set_val(gs_sparam_t* param, const void* val, size_t size)
+void gs_shader_set_val(gs_sparam_t *param, const void *val, size_t size)
 {
 	shader_setval_inline(param, val, size);
 }
 
-void gs_shader_set_default(gs_sparam_t* param)
+void gs_shader_set_default(gs_sparam_t *param)
 {
 	if (param->defaultValue.size())
 		shader_setval_inline(param, param->defaultValue.data(), param->defaultValue.size());
 }
 
-void gs_shader_set_next_sampler(gs_sparam_t* param, gs_samplerstate_t* sampler)
+void gs_shader_set_next_sampler(gs_sparam_t *param, gs_samplerstate_t *sampler)
 {
 	param->nextSampler = sampler;
 }

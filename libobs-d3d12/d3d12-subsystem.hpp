@@ -44,14 +44,14 @@ struct gs_staging_descriptor;
 struct gs_gpu_descriptor_heap_pool;
 struct gs_graphics_rootsignature;
 
-#define MAX_UNIFORM_BUFFERS_PER_STAGE  16
+#define MAX_UNIFORM_BUFFERS_PER_STAGE 16
 
-#define GS_GPU_BUFFERUSAGE_VERTEX                                  (1u << 0) /**< Buffer is a vertex buffer. */
-#define GS_GPU_BUFFERUSAGE_INDEX                                   (1u << 1) /**< Buffer is an index buffer. */
-#define GS_GPU_BUFFERUSAGE_INDIRECT                                (1u << 2) /**< Buffer is an indirect buffer. */
-#define GS_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ                   (1u << 3) /**< Buffer supports storage reads in graphics stages. */
-#define GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ                    (1u << 4) /**< Buffer supports storage reads in the compute stage. */
-#define GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE                   (1u << 5) /**< Buffer supports storage writes in the compute stage. */
+#define GS_GPU_BUFFERUSAGE_VERTEX (1u << 0)                /**< Buffer is a vertex buffer. */
+#define GS_GPU_BUFFERUSAGE_INDEX (1u << 1)                 /**< Buffer is an index buffer. */
+#define GS_GPU_BUFFERUSAGE_INDIRECT (1u << 2)              /**< Buffer is an indirect buffer. */
+#define GS_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ (1u << 3) /**< Buffer supports storage reads in graphics stages. */
+#define GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ (1u << 4)  /**< Buffer supports storage reads in the compute stage. */
+#define GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE (1u << 5) /**< Buffer supports storage writes in the compute stage. */
 
 static inline uint32_t GetWinVer()
 {
@@ -379,12 +379,7 @@ enum class gs_type {
 	gs_texture_3d,
 };
 
-enum gs_buffer_type {
-	gs_buffer_type_gpu,
-	gs_buffer_type_uniform,
-	gs_buffer_type_upload,
-	gs_buffer_type_download
-};
+enum gs_buffer_type { gs_buffer_type_gpu, gs_buffer_type_uniform, gs_buffer_type_upload, gs_buffer_type_download };
 
 struct gs_obj {
 	gs_device_t *device;
@@ -399,15 +394,15 @@ struct gs_obj {
 };
 
 struct gs_staging_descriptor_heap {
-	ID3D12DescriptorHeap* handle = nullptr;
+	ID3D12DescriptorHeap *handle = nullptr;
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart = { 0 };
+	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart = {0};
 	int32_t descriptorSize = 0;
 };
 
 struct gs_gpu_descriptor_heap {
-	gs_gpu_descriptor_heap_pool* pool = 0;
-	ID3D12DescriptorHeap* handle = NULL;
+	gs_gpu_descriptor_heap_pool *pool = 0;
+	ID3D12DescriptorHeap *handle = NULL;
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	D3D12_GPU_DESCRIPTOR_HANDLE descriptorHeapGPUStart = {0};
 	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart = {0};
@@ -417,24 +412,24 @@ struct gs_gpu_descriptor_heap {
 };
 
 struct gs_staging_descriptor {
-	gs_staging_descriptor_pool* pool = NULL;
-	gs_staging_descriptor_heap* heap = NULL;
-	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = { 0 };
+	gs_staging_descriptor_pool *pool = NULL;
+	gs_staging_descriptor_heap *heap = NULL;
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = {0};
 	int32_t cpuHandleIndex = 0;
 };
 
 struct gs_staging_descriptor_pool {
 	int32_t heapCount = 0;
-	gs_staging_descriptor_heap** heaps = NULL;
+	gs_staging_descriptor_heap **heaps = NULL;
 	int32_t descriptorCapacity = 0;
 	int32_t freeDescriptorCount = 0;
-	gs_staging_descriptor* freeDescriptors = NULL;
+	gs_staging_descriptor *freeDescriptors = NULL;
 };
 
 struct gs_gpu_descriptor_heap_pool {
 	int32_t capacity = 0;
 	int32_t count = 0;
-	gs_gpu_descriptor_heap** heaps = NULL;
+	gs_gpu_descriptor_heap **heaps = NULL;
 };
 
 gs_staging_descriptor_pool *gs_staging_descriptor_pool_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type);
@@ -443,17 +438,16 @@ void gs_expand_staging_descriptor_pool(ID3D12Device *device, gs_staging_descript
 
 void gs_staging_descriptor_pool_destroy(gs_staging_descriptor_pool *pool);
 
-void gs_staging_descriptor_release(gs_staging_descriptor* cpuDescriptor);
+void gs_staging_descriptor_release(gs_staging_descriptor *cpuDescriptor);
 
-gs_gpu_descriptor_heap_pool* gs_gpu_descriptor_heap_pool_create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type);
+gs_gpu_descriptor_heap_pool *gs_gpu_descriptor_heap_pool_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type);
 
-void gs_gpu_descriptor_heap_pool_destroy(gs_gpu_descriptor_heap_pool* pool);
+void gs_gpu_descriptor_heap_pool_destroy(gs_gpu_descriptor_heap_pool *pool);
 
-gs_gpu_descriptor_heap* gs_acquire_gpu_descriptor_heap(ID3D12Device* device, gs_gpu_descriptor_heap_pool* pool, D3D12_DESCRIPTOR_HEAP_TYPE type);
+gs_gpu_descriptor_heap *gs_acquire_gpu_descriptor_heap(ID3D12Device *device, gs_gpu_descriptor_heap_pool *pool,
+						       D3D12_DESCRIPTOR_HEAP_TYPE type);
 
-void gs_gpu_descriptor_heap_release(gs_gpu_descriptor_heap* heap);
-
-
+void gs_gpu_descriptor_heap_release(gs_gpu_descriptor_heap *heap);
 
 struct gs_buffer {
 	ComPtr<ID3D12Resource> resource;
@@ -467,13 +461,13 @@ struct gs_buffer {
 
 	int32_t size;
 
-	gs_device* device;
+	gs_device *device;
 	gs_buffer(gs_device *device, int32_t size, gs_buffer_type type, uint32_t flags);
 	inline ~gs_buffer() {}
 
 	void UploadToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
 	void CpoyBufferToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
-	void DownloadFromBuffer(gs_buffer* source, uint32_t source_offset, gs_buffer* dest, uint32_t dest_offset);
+	void DownloadFromBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
 };
 
 struct GPUTextureRegion {
@@ -489,7 +483,7 @@ struct GPUTextureRegion {
 
 struct gs_texture : gs_obj {
 	gs_texture_type type = GS_TEXTURE_2D;
-	uint32_t layerCountOrDepth = 1;  // layer count for 2d, depth for 3d
+	uint32_t layerCountOrDepth = 1; // layer count for 2d, depth for 3d
 	uint32_t levels = 0;
 	int32_t sampleCount = 1;
 	gs_color_format format = GS_BGRA;
@@ -524,7 +518,7 @@ struct gs_texture_2d : gs_texture {
 	ComPtr<ID3D12Resource> texture;
 
 	gs_staging_descriptor renderTargetDescriptor[6] = {0};
-	gs_staging_descriptor renderTargetLinearDescriptor[6] = { 0 };
+	gs_staging_descriptor renderTargetLinearDescriptor[6] = {0};
 
 	uint32_t width = 0, height = 0;
 	uint32_t flags = 0;
@@ -553,12 +547,13 @@ struct gs_texture_2d : gs_texture {
 	void BackupTexture(const uint8_t *const *data);
 	void GetSharedHandle(IDXGIResource *dxgi_res);
 
-	void UploadToTexture(gs_buffer* source, uint32_t source_offset, uint32_t source_pixels_per_row,
-		uint32_t souce_rows_per_layer, gs_texture_2d* dest, GPUTextureRegion textureRegion);
-	bool Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST* map);
+	void UploadToTexture(gs_buffer *source, uint32_t source_offset, uint32_t source_pixels_per_row,
+			     uint32_t souce_rows_per_layer, gs_texture_2d *dest, GPUTextureRegion textureRegion);
+	bool Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST *map);
 	void Unmap(int32_t subresourceIndex);
 
-	inline void Release() {
+	inline void Release()
+	{
 		if (textureDescriptor.cpuHandle.ptr != 0)
 			gs_staging_descriptor_release(&textureDescriptor);
 
@@ -639,8 +634,9 @@ struct gs_zstencil_buffer : gs_obj {
 
 	void InitBuffer();
 
-	void inline Clear() {
-		if (textureDescriptor.cpuHandle.ptr != 0) 
+	void inline Clear()
+	{
+		if (textureDescriptor.cpuHandle.ptr != 0)
 			gs_staging_descriptor_release(&textureDescriptor);
 
 		memset(&textureDescriptor, 0, sizeof(textureDescriptor));
@@ -676,9 +672,10 @@ struct gs_stage_surface : gs_obj {
 
 struct gs_sampler_state : gs_obj {
 	gs_sampler_info info;
-	gs_staging_descriptor* samplerDescriptor;
+	gs_staging_descriptor *samplerDescriptor;
 
-	inline void Release() {
+	inline void Release()
+	{
 		if (samplerDescriptor)
 			bfree(samplerDescriptor);
 
@@ -693,7 +690,7 @@ struct gs_shader_param {
 	gs_shader_param_type type;
 
 	uint32_t textureID;
-	struct gs_sampler_state* nextSampler = nullptr;
+	struct gs_sampler_state *nextSampler = nullptr;
 
 	int arrayCount;
 
@@ -703,14 +700,14 @@ struct gs_shader_param {
 	std::vector<uint8_t> defaultValue;
 	bool changed;
 
-	gs_shader_param(shader_var& var, uint32_t& texCounter);
+	gs_shader_param(shader_var &var, uint32_t &texCounter);
 };
 
 struct ShaderError {
 	ComPtr<ID3D10Blob> errors;
 	HRESULT hr;
 
-	inline ShaderError(const ComPtr<ID3D10Blob>& errors, HRESULT hr) : errors(errors), hr(hr) {}
+	inline ShaderError(const ComPtr<ID3D10Blob> &errors, HRESULT hr) : errors(errors), hr(hr) {}
 };
 
 struct gs_shader : gs_obj {
@@ -729,12 +726,12 @@ struct gs_shader : gs_obj {
 	void UploadParams();
 
 	void BuildConstantBuffer();
-	void Compile(const char* shaderStr, const char* file, const char* target, ID3D10Blob** shader);
+	void Compile(const char *shaderStr, const char *file, const char *target, ID3D10Blob **shader);
 
-	inline gs_shader(gs_device_t* device, gs_type obj_type, gs_shader_type type)
+	inline gs_shader(gs_device_t *device, gs_type obj_type, gs_shader_type type)
 		: gs_obj(device, obj_type),
-		type(type),
-		constantSize(0)
+		  type(type),
+		  constantSize(0)
 	{
 	}
 
@@ -745,9 +742,9 @@ struct ShaderSampler {
 	std::string name;
 	gs_sampler_state sampler;
 
-	inline ShaderSampler(const char* name, gs_device_t* device, gs_sampler_info* info)
+	inline ShaderSampler(const char *name, gs_device_t *device, gs_sampler_info *info)
 		: name(name),
-		sampler(device, info)
+		  sampler(device, info)
 	{
 	}
 };
@@ -756,7 +753,7 @@ struct gs_vertex_shader : gs_shader {
 	/*ComPtr<ID3D11VertexShader> shader;
 	ComPtr<ID3D11InputLayout> layout;*/
 
-	gs_shader_param* world, * viewProj;
+	gs_shader_param *world, *viewProj;
 
 	std::vector<D3D12_INPUT_ELEMENT_DESC> layoutData;
 
@@ -765,7 +762,7 @@ struct gs_vertex_shader : gs_shader {
 	bool hasTangents;
 	uint32_t nTexUnits;
 
-	void Rebuild(ID3D12Device* dev);
+	void Rebuild(ID3D12Device *dev);
 
 	inline void Release()
 	{
@@ -787,14 +784,14 @@ struct gs_vertex_shader : gs_shader {
 		return count;
 	}
 
-	void GetBuffersExpected(const std::vector<D3D12_INPUT_ELEMENT_DESC>& inputs);
+	void GetBuffersExpected(const std::vector<D3D12_INPUT_ELEMENT_DESC> &inputs);
 
-	gs_vertex_shader(gs_device_t* device, const char* file, const char* shaderString);
+	gs_vertex_shader(gs_device_t *device, const char *file, const char *shaderString);
 };
 
 struct gs_duplicator : gs_obj {
 	ComPtr<IDXGIOutputDuplication> duplicator;
-	gs_texture_2d* texture;
+	gs_texture_2d *texture;
 	bool hdr = false;
 	enum gs_color_space color_space = GS_CS_SRGB;
 	float sdr_white_nits = 80.f;
@@ -806,7 +803,7 @@ struct gs_duplicator : gs_obj {
 
 	inline void Release() { duplicator.Release(); }
 
-	gs_duplicator(gs_device_t* device, int monitor_idx);
+	gs_duplicator(gs_device_t *device, int monitor_idx);
 	~gs_duplicator();
 };
 
@@ -814,7 +811,7 @@ struct gs_pixel_shader : gs_shader {
 	/*ComPtr<ID3D11PixelShader> shader;*/
 	std::vector<std::unique_ptr<ShaderSampler>> samplers;
 
-	void Rebuild(ID3D12Device* dev);
+	void Rebuild(ID3D12Device *dev);
 
 	inline void Release()
 	{
@@ -822,7 +819,7 @@ struct gs_pixel_shader : gs_shader {
 		//constants.Release();
 	}
 
-	inline void GetSamplerDescriptor(gs_staging_descriptor** descriptor)
+	inline void GetSamplerDescriptor(gs_staging_descriptor **descriptor)
 	{
 		size_t i;
 		for (i = 0; i < samplers.size(); i++)
@@ -831,7 +828,7 @@ struct gs_pixel_shader : gs_shader {
 			descriptor[i] = NULL;
 	}
 
-	gs_pixel_shader(gs_device_t* device, const char* file, const char* shaderString);
+	gs_pixel_shader(gs_device_t *device, const char *file, const char *shaderString);
 };
 
 struct gs_swap_chain : gs_obj {
@@ -879,11 +876,10 @@ struct gs_graphics_rootsignature {
 		       pixelUniform32BitBufferRootIndex == other.pixelUniform32BitBufferRootIndex;
 	}
 
-	inline bool operator!=(const gs_graphics_rootsignature& other) const {
-		return !(*this == other);
-	}
+	inline bool operator!=(const gs_graphics_rootsignature &other) const { return !(*this == other); }
 
-	inline ~gs_graphics_rootsignature() {
+	inline ~gs_graphics_rootsignature()
+	{
 		rootSignature.Clear();
 		vertexUniform32BitBufferRootIndex = -1;
 		pixelSamplerRootIndex = -1;
@@ -891,7 +887,7 @@ struct gs_graphics_rootsignature {
 		pixelUniform32BitBufferRootIndex = -1;
 	}
 	inline gs_graphics_rootsignature() {}
-	gs_graphics_rootsignature(ID3D12Device* device, gs_vertex_shader* vertexShader, gs_pixel_shader* pixelShader);
+	gs_graphics_rootsignature(ID3D12Device *device, gs_vertex_shader *vertexShader, gs_pixel_shader *pixelShader);
 };
 
 struct gs_vertex_buffer : gs_obj {
@@ -962,7 +958,6 @@ struct gs_index_buffer : gs_obj {
 	gs_index_buffer(gs_device_t *device, enum gs_index_type type, void *indices, size_t num, uint32_t flags);
 };
 
-
 struct BlendState {
 	bool blendEnabled;
 	gs_blend_type srcFactorC;
@@ -986,19 +981,19 @@ struct BlendState {
 
 	inline BlendState()
 		: blendEnabled(true),
-		srcFactorC(GS_BLEND_SRCALPHA),
-		destFactorC(GS_BLEND_INVSRCALPHA),
-		srcFactorA(GS_BLEND_ONE),
-		destFactorA(GS_BLEND_INVSRCALPHA),
-		op(GS_BLEND_OP_ADD),
-		redEnabled(true),
-		greenEnabled(true),
-		blueEnabled(true),
-		alphaEnabled(true)
+		  srcFactorC(GS_BLEND_SRCALPHA),
+		  destFactorC(GS_BLEND_INVSRCALPHA),
+		  srcFactorA(GS_BLEND_ONE),
+		  destFactorA(GS_BLEND_INVSRCALPHA),
+		  op(GS_BLEND_OP_ADD),
+		  redEnabled(true),
+		  greenEnabled(true),
+		  blueEnabled(true),
+		  alphaEnabled(true)
 	{
 	}
 
-	inline BlendState(const BlendState& state) { memcpy(this, &state, sizeof(BlendState)); }
+	inline BlendState(const BlendState &state) { memcpy(this, &state, sizeof(BlendState)); }
 };
 
 struct StencilSide {
@@ -1012,14 +1007,10 @@ struct StencilSide {
 		return test == other.test && fail == other.fail && zfail == other.zfail && zpass == other.zpass;
 	}
 
-	inline bool operator!=(const StencilSide& other) const
-	{
-		return !(*this == other);
-	}
+	inline bool operator!=(const StencilSide &other) const { return !(*this == other); }
 
 	inline StencilSide() : test(GS_ALWAYS), fail(GS_KEEP), zfail(GS_KEEP), zpass(GS_KEEP) {}
 };
-
 
 struct ZStencilState {
 	bool depthEnabled;
@@ -1033,14 +1024,14 @@ struct ZStencilState {
 
 	inline ZStencilState()
 		: depthEnabled(true),
-		depthWriteEnabled(true),
-		depthFunc(GS_LESS),
-		stencilEnabled(false),
-		stencilWriteEnabled(true)
+		  depthWriteEnabled(true),
+		  depthFunc(GS_LESS),
+		  stencilEnabled(false),
+		  stencilWriteEnabled(true)
 	{
 	}
 
-        inline bool operator==(const ZStencilState &other) const
+	inline bool operator==(const ZStencilState &other) const
 	{
 		return depthEnabled == other.depthEnabled && depthWriteEnabled == other.depthWriteEnabled &&
 		       depthFunc == other.depthFunc && stencilEnabled == other.stencilEnabled &&
@@ -1048,29 +1039,21 @@ struct ZStencilState {
 		       stencilBack == other.stencilBack;
 	}
 
-	inline bool operator!=(const ZStencilState& other) const
-	{
-		return !(*this == other);
-	}
+	inline bool operator!=(const ZStencilState &other) const { return !(*this == other); }
 
-	inline ZStencilState(const ZStencilState& state) { memcpy(this, &state, sizeof(ZStencilState)); }
+	inline ZStencilState(const ZStencilState &state) { memcpy(this, &state, sizeof(ZStencilState)); }
 };
 
 struct RasterState {
 	gs_cull_mode cullMode;
-	bool scissorEnabled;
 
-	inline bool operator==(const RasterState& other) const {
-		return cullMode == other.cullMode && scissorEnabled == other.scissorEnabled;
-	}
+	inline bool operator==(const RasterState &other) const { return cullMode == other.cullMode; }
 
-	inline bool operator!=(const RasterState& other) const {
-		return !(*this == other);
-	}
+	inline bool operator!=(const RasterState &other) const { return !(*this == other); }
 
-	inline RasterState() : cullMode(GS_BACK), scissorEnabled(false) {}
+	inline RasterState() : cullMode(GS_BACK) {}
 
-	inline RasterState(const RasterState& state) { memcpy(this, &state, sizeof(RasterState)); }
+	inline RasterState(const RasterState &state) { memcpy(this, &state, sizeof(RasterState)); }
 };
 
 struct mat4float {
@@ -1160,11 +1143,11 @@ struct gs_device {
 	RasterState curRasterState;
 	BlendState curBlendState;
 
-	gs_staging_descriptor_pool* stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
-	gs_gpu_descriptor_heap_pool* gpuSamplerDescriptorPool = nullptr;
-	gs_gpu_descriptor_heap_pool* gpuSRVDescriptorPool = nullptr;
+	gs_staging_descriptor_pool *stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
+	gs_gpu_descriptor_heap_pool *gpuSamplerDescriptorPool = nullptr;
+	gs_gpu_descriptor_heap_pool *gpuSRVDescriptorPool = nullptr;
 
-	gs_gpu_descriptor_heap* gpu_descriptor_heap[2]; // 0 view 1 sampler
+	gs_gpu_descriptor_heap *gpu_descriptor_heap[2]; // 0 view 1 sampler
 
 	D3D12_PRIMITIVE_TOPOLOGY curToplogy;
 	gs_graphics_pipeline curPipeline;
@@ -1188,17 +1171,17 @@ struct gs_device {
 	void InitAdapter(uint32_t adapterIdx);
 	void InitDevice(uint32_t adapterIdx);
 
-	void AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE heapType, gs_staging_descriptor* cpuDescripotr);
-	void WriteGPUDescriptor(gs_gpu_descriptor_heap *gpuHeap, D3D12_CPU_DESCRIPTOR_HANDLE* cpuHandle, int32_t count,
-				D3D12_GPU_DESCRIPTOR_HANDLE * gpuBaseDescriptor);
+	void AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE heapType, gs_staging_descriptor *cpuDescripotr);
+	void WriteGPUDescriptor(gs_gpu_descriptor_heap *gpuHeap, D3D12_CPU_DESCRIPTOR_HANDLE *cpuHandle, int32_t count,
+				D3D12_GPU_DESCRIPTOR_HANDLE *gpuBaseDescriptor);
 	void TransitionResource(ID3D12Resource *resource, D3D12_RESOURCE_STATES beforeState,
 				D3D12_RESOURCE_STATES afterState);
 
-	void ConvertZStencilState(D3D12_DEPTH_STENCIL_DESC& desc, const ZStencilState& zs);
-	void ConvertRasterState(D3D12_RASTERIZER_DESC& desc, const RasterState& rs);
-	void ConvertBlendState(D3D12_BLEND_DESC& desc, const BlendState& bs);
+	void ConvertZStencilState(D3D12_DEPTH_STENCIL_DESC &desc, const ZStencilState &zs);
+	void ConvertRasterState(D3D12_RASTERIZER_DESC &desc, const RasterState &rs);
+	void ConvertBlendState(D3D12_BLEND_DESC &desc, const BlendState &bs);
 
-	void GeneratePipelineState(gs_graphics_pipeline& pipeline);
+	void GeneratePipelineState(gs_graphics_pipeline &pipeline);
 	void UpdateGraphicsPipeline();
 
 	void LoadVertexBufferData();

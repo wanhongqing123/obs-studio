@@ -25,7 +25,7 @@ void gs_index_buffer::InitBuffer()
 	memset(&desc, 0, sizeof(D3D12_RESOURCE_DESC));
 	memset(&props, 0, sizeof(D3D12_HEAP_PROPERTIES));
 
-	props.Type =  D3D12_HEAP_TYPE_UPLOAD;
+	props.Type = D3D12_HEAP_TYPE_UPLOAD;
 	props.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	props.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
@@ -42,7 +42,7 @@ void gs_index_buffer::InitBuffer()
 	HRESULT hr;
 
 	hr = device->device->CreateCommittedResource(&props, D3D12_HEAP_FLAG_NONE, &desc,
-						     D3D12_RESOURCE_STATE_GENERIC_READ,  nullptr,
+						     D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
 						     IID_PPV_ARGS(indexBuffer.Assign()));
 	if (FAILED(hr))
 		throw HRError("Failed to create buffer", hr);

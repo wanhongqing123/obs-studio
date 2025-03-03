@@ -45,7 +45,6 @@ gs_stage_surface::gs_stage_surface(gs_device_t *device, uint32_t width, uint32_t
 	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-
 	D3D12_RESOURCE_DESC textureDesc;
 	memset(&textureDesc, 0, sizeof(textureDesc));
 
@@ -106,7 +105,6 @@ gs_stage_surface::gs_stage_surface(gs_device_t *device, uint32_t width, uint32_t
 	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-
 	D3D12_RESOURCE_DESC textureDesc;
 	memset(&textureDesc, 0, sizeof(textureDesc));
 
@@ -130,11 +128,11 @@ gs_stage_surface::gs_stage_surface(gs_device_t *device, uint32_t width, uint32_t
 	uint32_t row, NumRows, RowPitch;
 	uint64_t RowLength;
 	device->device->GetCopyableFootprints(&textureDesc, 0, 1, 0, &placedTextureDesc, &NumRows, &RowLength,
-		&downloadDesc.Width);
+					      &downloadDesc.Width);
 	RowPitch = placedTextureDesc.Footprint.RowPitch;
 
 	hr = device->device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &downloadDesc,
-		D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
+						     D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&texture));
 	if (FAILED(hr))
 		throw HRError("Failed to create staging surface", hr);
 }

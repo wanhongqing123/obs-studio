@@ -17,8 +17,12 @@
 
 #include "d3d12-subsystem.hpp"
 
-gs_buffer::gs_buffer(gs_device* device_, int32_t size_, gs_buffer_type type_, uint32_t flags) :
-	device(device_), size(size_), type(type_), usageFlags(flags) {
+gs_buffer::gs_buffer(gs_device *device_, int32_t size_, gs_buffer_type type_, uint32_t flags)
+	: device(device_),
+	  size(size_),
+	  type(type_),
+	  usageFlags(flags)
+{
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc;
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
@@ -27,7 +31,6 @@ gs_buffer::gs_buffer(gs_device* device_, int32_t size_, gs_buffer_type type_, ui
 	D3D12_HEAP_FLAGS heapFlags = (D3D12_HEAP_FLAGS)0;
 	D3D12_RESOURCE_FLAGS resourceFlags = (D3D12_RESOURCE_FLAGS)0;
 	D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_COMMON;
-
 
 	if (usageFlags & GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE) {
 		resourceFlags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
@@ -41,22 +44,19 @@ gs_buffer::gs_buffer(gs_device* device_, int32_t size_, gs_buffer_type type_, ui
 		heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 		heapFlags = D3D12_HEAP_FLAG_NONE;
-	}
-	else if (type == gs_buffer_type_upload) {
+	} else if (type == gs_buffer_type_upload) {
 		heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
 		heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 		heapFlags = D3D12_HEAP_FLAG_NONE;
 		initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
-	}
-	else if (type == gs_buffer_type_download) {
+	} else if (type == gs_buffer_type_download) {
 		heapProperties.Type = D3D12_HEAP_TYPE_READBACK;
 		heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 		heapFlags = D3D12_HEAP_FLAG_NONE;
 		initialState = D3D12_RESOURCE_STATE_COPY_DEST;
-	}
-	else if (type == gs_buffer_type_uniform) {
+	} else if (type == gs_buffer_type_uniform) {
 		heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
 		heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
@@ -77,13 +77,8 @@ gs_buffer::gs_buffer(gs_device* device_, int32_t size_, gs_buffer_type type_, ui
 	desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 	desc.Flags = resourceFlags;
 
-	HRESULT hr = device->device->CreateCommittedResource(
-		&heapProperties,
-		heapFlags,
-		&desc,
-		initialState,
-		NULL,
-		IID_PPV_ARGS(&resource));
+	HRESULT hr = device->device->CreateCommittedResource(&heapProperties, heapFlags, &desc, initialState, NULL,
+							     IID_PPV_ARGS(&resource));
 	if (FAILED(hr))
 		throw HRError("failed create gs buffer", hr);
 
@@ -92,9 +87,7 @@ gs_buffer::gs_buffer(gs_device* device_, int32_t size_, gs_buffer_type type_, ui
 	cbvDescriptor.heap = NULL;
 
 	if (usageFlags & GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE) {
-		device->AssignStagingDescriptor(
-			D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-			&uavDescriptor);
+		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, &uavDescriptor);
 
 		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 		uavDesc.Format = DXGI_FORMAT_R32_TYPELESS;
@@ -105,19 +98,14 @@ gs_buffer::gs_buffer(gs_device* device_, int32_t size_, gs_buffer_type type_, ui
 		uavDesc.Buffer.StructureByteStride = 0;
 
 		// Create UAV
-		device->device->CreateUnorderedAccessView(
-			resource,
-			NULL, // TODO: support counters?
-			&uavDesc,
-			uavDescriptor.cpuHandle);
+		device->device->CreateUnorderedAccessView(resource,
+							  NULL, // TODO: support counters?
+							  &uavDesc, uavDescriptor.cpuHandle);
 	}
 
-	if (
-		(usageFlags & GS_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ) ||
-		(usageFlags & GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ)) {
-		device->AssignStagingDescriptor(
-			D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-			&srvDescriptor);
+	if ((usageFlags & GS_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ) ||
+	    (usageFlags & GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ)) {
+		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, &srvDescriptor);
 
 		srvDesc.Format = DXGI_FORMAT_R32_TYPELESS;
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -128,17 +116,12 @@ gs_buffer::gs_buffer(gs_device* device_, int32_t size_, gs_buffer_type type_, ui
 		srvDesc.Buffer.StructureByteStride = 0;
 
 		// Create SRV
-		device->device->CreateShaderResourceView(
-			resource,
-			&srvDesc,
-			srvDescriptor.cpuHandle);
+		device->device->CreateShaderResourceView(resource, &srvDesc, srvDescriptor.cpuHandle);
 	}
 
 	// FIXME: we may not need a CBV since we use root descriptors
 	if (type == gs_buffer_type_uniform) {
-		device->AssignStagingDescriptor(
-			D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-			&cbvDescriptor);
+		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, &cbvDescriptor);
 
 		cbvDesc.BufferLocation = resource->GetGPUVirtualAddress();
 		cbvDesc.SizeInBytes = size;
@@ -216,18 +199,12 @@ static void BufferTransitionFromDefaultUsage(ID3D12GraphicsCommandList *commandL
 	buffer->transitioned = true;
 }
 
-static void BufferTransitionToDefaultUsage(
-	ID3D12GraphicsCommandList* commandList,
-	D3D12_RESOURCE_STATES sourceState,
-	gs_buffer* buffer)
+static void BufferTransitionToDefaultUsage(ID3D12GraphicsCommandList *commandList, D3D12_RESOURCE_STATES sourceState,
+					   gs_buffer *buffer)
 {
-	ResourceBarrier(
-		commandList,
-		buffer->transitioned ? sourceState : D3D12_RESOURCE_STATE_COMMON,
-		GetDefaultBufferResourceState(buffer),
-		buffer->resource,
-		0,
-		buffer->usageFlags & GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE);
+	ResourceBarrier(commandList, buffer->transitioned ? sourceState : D3D12_RESOURCE_STATE_COMMON,
+			GetDefaultBufferResourceState(buffer), buffer->resource, 0,
+			buffer->usageFlags & GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE);
 
 	buffer->transitioned = true;
 }
@@ -257,4 +234,3 @@ void gs_buffer::DownloadFromBuffer(gs_buffer *source, uint32_t source_offset, gs
 					      source->size);
 	BufferTransitionToDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_SOURCE, source);
 }
-

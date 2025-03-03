@@ -120,6 +120,7 @@ gs_pixel_shader::gs_pixel_shader(gs_device_t *device, const char *file, const ch
 
 void gs_shader::BuildConstantBuffer()
 {
+	int32_t textures = 0;
 	for (size_t i = 0; i < params.size(); i++) {
 		gs_shader_param &param = params[i];
 		size_t size = 0;
@@ -146,6 +147,7 @@ void gs_shader::BuildConstantBuffer()
 			size = sizeof(float) * 4 * 4;
 			break;
 		case GS_SHADER_PARAM_TEXTURE:
+			++textures;
 			continue;
 		case GS_SHADER_PARAM_STRING:
 		case GS_SHADER_PARAM_UNKNOWN:
@@ -162,6 +164,8 @@ void gs_shader::BuildConstantBuffer()
 	if (constantSize) {
 		uniform32BitBufferCount = constantSize / 4; /* align */
 	}
+
+	textureCount = textures;
 
 	for (size_t i = 0; i < params.size(); i++)
 		gs_shader_set_default(&params[i]);
@@ -266,11 +270,11 @@ void gs_shader::UploadParams()
 		throw "Invalid constant data size given to shader";
 
 	gs_graphics_rootsignature *root_sig = &device->curPipeline.curRootSignature;
-	if (type == GS_SHADER_VERTEX)
+	if (type == GS_SHADER_VERTEX && constantSize != 0)
 		device->commandList->SetGraphicsRoot32BitConstants(root_sig->vertexUniform32BitBufferRootIndex,
 								   uniform32BitBufferCount, constData.data(), 0);
 
-	if (type == GS_SHADER_PIXEL)
+	if (type == GS_SHADER_PIXEL && constantSize != 0)
 		device->commandList->SetGraphicsRoot32BitConstants(root_sig->pixelUniform32BitBufferRootIndex,
 								   uniform32BitBufferCount, constData.data(), 0);
 }

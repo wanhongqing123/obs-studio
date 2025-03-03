@@ -1739,7 +1739,7 @@ static inline void clear_textures(gs_device_t *device)
 
 void device_load_pixelshader(gs_device_t *device, gs_shader_t *pixelshader)
 {
-	gs_staging_descriptor *states[GS_MAX_TEXTURES];
+	gs_samplerstate_t *states[GS_MAX_TEXTURES];
 
 	if (device->curPixelShader == pixelshader)
 		return;
@@ -1763,9 +1763,8 @@ void device_load_pixelshader(gs_device_t *device, gs_shader_t *pixelshader)
 
 	device->curPixelShader = ps;
 
-	for (int i = 0; i < GS_MAX_TEXTURES; i++)
-		if (device->curSamplers[i] && device->curSamplers[i]->samplerDescriptor != states[i])
-			device->curSamplers[i] = nullptr;
+	for (size_t i = 0; i < GS_MAX_TEXTURES; i++)
+		device->curSamplers[i] = states[i];
 }
 
 void device_load_default_samplerstate(gs_device_t *device, bool b_3d, int unit)

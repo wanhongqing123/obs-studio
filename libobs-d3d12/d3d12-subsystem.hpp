@@ -808,22 +808,19 @@ struct gs_duplicator : gs_obj {
 };
 
 struct gs_pixel_shader : gs_shader {
-	/*ComPtr<ID3D11PixelShader> shader;*/
 	std::vector<std::unique_ptr<ShaderSampler>> samplers;
 
 	void Rebuild(ID3D12Device *dev);
 
 	inline void Release()
 	{
-		//shader.Release();
-		//constants.Release();
 	}
 
-	inline void GetSamplerDescriptor(gs_staging_descriptor **descriptor)
+	inline void GetSamplerDescriptor(gs_samplerstate_t **descriptor)
 	{
 		size_t i;
 		for (i = 0; i < samplers.size(); i++)
-			descriptor[i] = samplers[i]->sampler.samplerDescriptor;
+			descriptor[i] = &samplers[i]->sampler;
 		for (; i < GS_MAX_TEXTURES; i++)
 			descriptor[i] = NULL;
 	}

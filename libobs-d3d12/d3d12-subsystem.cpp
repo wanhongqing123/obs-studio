@@ -135,8 +135,6 @@ void gs_swap_chain::InitTarget(uint32_t cx, uint32_t cy)
 			device->device->CreateRenderTargetView(target[i].texture, &rtv, target[i].renderTargetLinearDescriptor[0].cpuHandle);
 		}
 	}
-
-	currentBackBufferIndex = swap->GetCurrentBackBufferIndex();
 }
 
 void gs_swap_chain::InitZStencilBuffer(uint32_t cx, uint32_t cy)
@@ -191,6 +189,7 @@ void gs_swap_chain::Resize(uint32_t cx, uint32_t cy, gs_color_format format)
 
 	InitTarget(cx, cy);
 	InitZStencilBuffer(cx, cy);
+	currentBackBufferIndex = swap->GetCurrentBackBufferIndex();
 }
 
 void gs_swap_chain::Init()
@@ -212,6 +211,7 @@ void gs_swap_chain::Init()
 	zs.format = initData.zsformat;
 	zs.dxgiFormat = ConvertGSZStencilFormat(initData.zsformat);
 	InitZStencilBuffer(initData.cx, initData.cy);
+	currentBackBufferIndex = swap->GetCurrentBackBufferIndex();
 }
 
 gs_swap_chain::gs_swap_chain(gs_device *device, const gs_init_data *data)
@@ -457,6 +457,8 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 	if (FAILED(hr))
 		throw UnsupportedHWError("Failed to create commandList", hr);
 
+	commandList->Close();
+
 	stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] =
 		gs_staging_descriptor_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER] =
@@ -475,7 +477,6 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 
 	gpu_descriptor_heap[0] = gs_acquire_gpu_descriptor_heap(device, gpuSRVDescriptorPool, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	gpu_descriptor_heap[1] = gs_acquire_gpu_descriptor_heap(device, gpuSamplerDescriptorPool, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
-
 
 	fastClearSupported = FastClearSupported(desc.VendorId, driverVersion);
 	blog(LOG_INFO, "D3D12 loaded successfully, feature level used: %x", (unsigned int)levelUsed);
@@ -624,8 +625,6 @@ void gs_device::GeneratePipelineState(gs_graphics_pipeline& pipeline) {
 	psoDesc.NumRenderTargets = 1;
 
 	psoDesc.RTVFormats[0] = pipeline.rtvformat;
-
-	psoDesc.DepthStencilState.DepthEnable = (psoDesc.DSVFormat == DXGI_FORMAT_UNKNOWN);
 
 	HRESULT hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipeline.pipeline_state));
 	if (FAILED(hr))
@@ -1287,10 +1286,17 @@ static void device_resize_internal(gs_device_t *device, uint32_t cx, uint32_t cy
 {
 	try {
 		const gs_color_format format = get_swap_format_from_space(space, device->curSwapChain->initData.format);
-
+		device->curRenderTarget = NULL;
+		device->curZStencilBuffer = NULL;
 		device->commandList->OMSetRenderTargets(0, NULL, false, NULL);
-		device->curSwapChain->Resize(cx, cy, format);
 		device->curSwapChain->space = space;
+		device->curSwapChain->Resize(cx, cy, format);
+		device->curFramebufferInvalidate = true;
+		// TODO is cube?
+		device->curRenderTarget = &device->curSwapChain->target[device->curSwapChain->currentBackBufferIndex];
+		device->curZStencilBuffer = &device->curSwapChain->zs;
+		device->curRenderSide = 0;
+		device->curColorSpace = space;
 		device->curFramebufferInvalidate = true;
 	} catch (const HRError &error) {
 		blog(LOG_ERROR, "device_resize_internal (D3D12): %s (%08lX)", error.str, error.hr);
@@ -1307,7 +1313,7 @@ void device_resize(gs_device_t *device, uint32_t cx, uint32_t cy)
 
 	const enum gs_color_space next_space =
 		get_next_space(device, device->curSwapChain->hwnd, device->curSwapChain->swapDesc.SwapEffect);
-	// device_resize_internal(device, cx, cy, next_space);
+	device_resize_internal(device, cx, cy, next_space);
 }
 
 enum gs_color_space device_get_color_space(gs_device_t *device)
@@ -1595,11 +1601,6 @@ void gs_device::LoadVertexBufferData()
 	}
 
 	commandList->IASetVertexBuffers(0, numViews, views);
-
-	currentVertexBuffer++;
-
-	lastVertexBuffer = curVertexBuffer;
-	lastVertexShader = curVertexShader;
 }
 
 void device_load_vertexbuffer(gs_device_t *device, gs_vertbuffer_t *vertbuffer)
@@ -2037,7 +2038,9 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 			throw "No render target or swap chain to render to";
 
 		device->FlushOutputViews();
-
+		gs_effect_t* effect = gs_get_effect();
+		if (effect)
+			gs_effect_update_params(effect);
 		device->curToplogy = ConvertGSTopology(draw_mode);
 
 		device->UpdateGraphicsPipeline();
@@ -2050,10 +2053,6 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 		device->commandList->OMSetBlendFactor(blendFactor);
 
 		device->commandList->OMSetStencilRef(0);
-
-		gs_effect_t *effect = gs_get_effect();
-		if (effect)
-			gs_effect_update_params(effect);
 
 		device->LoadVertexBufferData();
 
@@ -2355,6 +2354,12 @@ void device_set_viewport(gs_device_t *device, int x, int y, int width, int heigh
 	device->viewport.y = y;
 	device->viewport.cx = width;
 	device->viewport.cy = height;
+	D3D12_RECT d3drect;
+	d3drect.left = x;
+	d3drect.top = y;
+	d3drect.right = width;
+	d3drect.bottom = height;
+	device->commandList->RSSetScissorRects(1, &d3drect);
 }
 
 void device_get_viewport(const gs_device_t *device, struct gs_rect *rect)
@@ -2627,8 +2632,6 @@ void gs_samplerstate_destroy(gs_samplerstate_t *samplerstate)
 
 void gs_vertexbuffer_destroy(gs_vertbuffer_t *vertbuffer)
 {
-	if (vertbuffer && vertbuffer->device->lastVertexBuffer == vertbuffer)
-		vertbuffer->device->lastVertexBuffer = nullptr;
 	delete vertbuffer;
 }
 

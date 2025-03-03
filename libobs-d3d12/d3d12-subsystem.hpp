@@ -1156,11 +1156,6 @@ struct gs_device {
 	gs_pixel_shader *curPixelShader = nullptr;
 	gs_swap_chain *curSwapChain = nullptr;
 
-	gs_vertex_buffer *lastVertexBuffer = nullptr;
-	gs_vertex_shader *lastVertexShader = nullptr;
-
-	int32_t currentVertexBuffer = 0;
-
 	ZStencilState curZstencilState;
 	RasterState curRasterState;
 	BlendState curBlendState;

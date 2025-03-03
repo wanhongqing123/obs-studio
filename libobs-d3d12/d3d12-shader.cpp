@@ -68,18 +68,6 @@ gs_vertex_shader::gs_vertex_shader(gs_device_t* device, const char* file, const 
 	data.resize(shaderBlob->GetBufferSize());
 	memcpy(&data[0], shaderBlob->GetBufferPointer(), data.size());
 
-	//hr = device->device->CreateVertexShader(data.data(), data.size(), NULL, shader.Assign());
-	//if (FAILED(hr))
-	//	throw HRError("Failed to create vertex shader", hr);
-
-	//const UINT layoutSize = (UINT)layoutData.size();
-	//if (layoutSize > 0) {
-	//	hr = device->device->CreateInputLayout(layoutData.data(), (UINT)layoutSize, data.data(), data.size(),
-	//		layout.Assign());
-	//	if (FAILED(hr))
-	//		throw HRError("Failed to create input layout", hr);
-	//}
-
 	viewProj = gs_shader_get_param_by_name(this, "ViewProj");
 	world = gs_shader_get_param_by_name(this, "World");
 }
@@ -105,10 +93,6 @@ gs_pixel_shader::gs_pixel_shader(gs_device_t* device, const char* file, const ch
 
 	data.resize(shaderBlob->GetBufferSize());
 	memcpy(&data[0], shaderBlob->GetBufferPointer(), data.size());
-
-	//hr = device->device->CreatePixelShader(data.data(), data.size(), NULL, shader.Assign());
-	//if (FAILED(hr))
-	//	throw HRError("Failed to create pixel shader", hr);
 }
 
 /*
@@ -210,7 +194,7 @@ void gs_shader::Compile(const char* shaderString, const char* file, const char* 
 	
 	if (!is_cached) {
 		hr = D3DCompile(shaderString, shaderStrLen, file, NULL, NULL, "main", target,
-			0, 0, shader, errorsBlob.Assign());
+			D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION, 0, shader, errorsBlob.Assign());
 		if (FAILED(hr)) {
 			if (errorsBlob != NULL && errorsBlob->GetBufferSize())
 				throw ShaderError(errorsBlob, hr);
@@ -285,8 +269,8 @@ void gs_shader::UploadParams()
 	
 	gs_graphics_rootsignature *root_sig = &device->curPipeline.curRootSignature;
 	if (type == GS_SHADER_VERTEX)
-		device->commandList->SetGraphicsRoot32BitConstants(
-				root_sig->vertexUniform32BitBufferRootIndex, uniform32BitBufferCount, constData.data(), 0);
+		device->commandList->SetGraphicsRoot32BitConstants(root_sig->vertexUniform32BitBufferRootIndex,
+								   uniform32BitBufferCount, constData.data(), 0);
 
 	if (type == GS_SHADER_PIXEL)
 		device->commandList->SetGraphicsRoot32BitConstants(
@@ -296,8 +280,6 @@ void gs_shader::UploadParams()
 
 void gs_shader_destroy(gs_shader_t* shader)
 {
-	if (shader && shader->device->lastVertexShader == shader)
-		shader->device->lastVertexShader = nullptr;
 	delete shader;
 }
 

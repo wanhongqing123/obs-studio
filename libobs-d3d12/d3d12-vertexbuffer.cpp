@@ -85,7 +85,7 @@ void gs_vertex_buffer::InitBuffer(const size_t elementSize, const size_t numVert
 
 	memset(&vbufferDesc, 0, sizeof(D3D12_RESOURCE_DESC));
 	vbufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	vbufferDesc.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+	vbufferDesc.Alignment = 0;
 	vbufferDesc.Width = numVerts * elementSize;
 	vbufferDesc.Height = 1;
 	vbufferDesc.DepthOrArraySize = 1;
@@ -162,10 +162,6 @@ gs_vertex_buffer::gs_vertex_buffer(gs_device_t *device, struct gs_vb_data *data,
 
 	for (int32_t i = 0; i < data->num; ++i) {
 		vertexBufferData.push_back(data->points[i]);
-		data->points[i].x /= 2;
-		data->points[i].y /= 2;
-		data->points[i].z /= 2;
-		data->points[i].w /= 2;
 	}
 
 	BuildBuffers();

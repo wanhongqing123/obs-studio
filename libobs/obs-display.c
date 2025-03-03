@@ -199,10 +199,7 @@ static inline bool render_display_begin(struct obs_display *display, uint32_t cx
 		uint32_t clear_flags = GS_CLEAR_DEPTH | GS_CLEAR_STENCIL;
 		if (!use_clear_workaround)
 			clear_flags |= GS_CLEAR_COLOR;
-		// const float clearColor[] = { 0.0f, 0.8f, 0.4f, 1.0f };
-		clear_color.x = 0.0f;
-		clear_color.y = 0.8f;
-		clear_color.z = 0.4f;
+
 		gs_clear(clear_flags, &clear_color, 1.0f, 0);
 
 		gs_enable_depth_test(false);

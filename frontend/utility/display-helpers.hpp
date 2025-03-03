@@ -59,8 +59,8 @@ static inline QSize GetPixelSize(QWidget *widget)
 	return widget->size() * widget->devicePixelRatioF();
 }
 
-#define OUTLINE_COLOR 0xFF000000
-#define LINE_LENGTH 0.5f
+#define OUTLINE_COLOR 0xFFD0D0D0
+#define LINE_LENGTH 0.1f
 
 // Rec. ITU-R BT.1848-1 / EBU R 95
 #define ACTION_SAFE_PERCENT 0.035f       // 3.5%

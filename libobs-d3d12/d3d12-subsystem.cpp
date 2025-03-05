@@ -2601,7 +2601,8 @@ void gs_samplerstate_destroy(gs_samplerstate_t *samplerstate)
 
 void gs_vertexbuffer_destroy(gs_vertbuffer_t *vertbuffer)
 {
-	delete vertbuffer;
+	// TODO
+	// delete vertbuffer;
 }
 
 static inline void gs_vertexbuffer_flush_internal(gs_vertbuffer_t *vertbuffer, const gs_vb_data *data)
@@ -2614,7 +2615,7 @@ static inline void gs_vertexbuffer_flush_internal(gs_vertbuffer_t *vertbuffer, c
 		return;
 	}
 
-	/*if (data->points)
+	if (data->points)
 		vertbuffer->FlushBuffer(vertbuffer->vertexBuffer, data->points, sizeof(vec3));
 
 	if (vertbuffer->normalBuffer && data->normals)
@@ -2629,7 +2630,7 @@ static inline void gs_vertexbuffer_flush_internal(gs_vertbuffer_t *vertbuffer, c
 	for (size_t i = 0; i < num_tex; i++) {
 		gs_tvertarray &tv = data->tvarray[i];
 		vertbuffer->FlushBuffer(vertbuffer->uvBuffers[i], tv.array, tv.width * sizeof(float));
-	}*/
+	}
 }
 
 void gs_vertexbuffer_flush(gs_vertbuffer_t *vertbuffer)

@@ -1122,7 +1122,7 @@ bool obs_graphics_thread_loop(struct obs_graphics_context *context)
 
 	source_profiler_render_begin();
 	profile_start(output_frame_name);
-	// output_frames();
+	output_frames();
 	profile_end(output_frame_name);
 
 	profile_start(render_displays_name);

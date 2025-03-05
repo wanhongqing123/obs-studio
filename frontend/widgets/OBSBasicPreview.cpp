@@ -2244,7 +2244,7 @@ static void DrawLabel(OBSSource source, vec3 &pos, vec3 &viewport)
 	gs_matrix_push();
 	gs_matrix_identity();
 	gs_matrix_translate(&pos);
-	// obs_source_video_render(source);
+	obs_source_video_render(source);
 	gs_matrix_pop();
 }
 

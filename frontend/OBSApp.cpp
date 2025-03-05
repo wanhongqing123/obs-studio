@@ -968,9 +968,18 @@ const char *OBSApp::GetRenderModule() const
 			blog(LOG_INFO, "Load WinPixgpuCapture Success");
 		}
 	}
+	return DL_D3D12;
+	return DL_D3D11;
 	const char *renderer = config_get_string(appConfig, "Video", "Renderer");
-	return "libobs-d3d12.dll";
-	return (astrcmpi(renderer, "Direct3D 11") == 0) ? DL_D3D11 : DL_OPENGL;
+	if (astrcmpi(renderer, "Direct3D 12") == 0) {
+		return DL_D3D12;
+	}
+	else if (astrcmpi(renderer, "Direct3D 11") == 0) {
+		return DL_D3D11;
+	}
+	else {
+		return DL_OPENGL;
+	}
 }
 
 static bool StartupOBS(const char *locale, profiler_name_store_t *store)

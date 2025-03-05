@@ -25,8 +25,8 @@ static inline void PushBuffer(UINT *refNumBuffers, D3D12_VERTEX_BUFFER_VIEW *vie
 	const UINT numBuffers = *refNumBuffers;
 	if (view.BufferLocation) {
 		views[numBuffers].BufferLocation = view.BufferLocation;
-		views[numBuffers].SizeInBytes = view.SizeInBytes;
 		views[numBuffers].StrideInBytes = view.StrideInBytes;
+		views[numBuffers].SizeInBytes = view.SizeInBytes;
 		*refNumBuffers = numBuffers + 1;
 	} else {
 		blog(LOG_ERROR, "This vertex shader requires a %s buffer", name);

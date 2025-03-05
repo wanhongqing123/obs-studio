@@ -1148,7 +1148,6 @@ struct gs_device {
 
 	D3D12_PRIMITIVE_TOPOLOGY curToplogy;
 	gs_graphics_pipeline curPipeline;
-	gs_graphics_rootsignature curRootSignature;
 
 	std::vector<gs_graphics_pipeline> graphicsPipelines;
 

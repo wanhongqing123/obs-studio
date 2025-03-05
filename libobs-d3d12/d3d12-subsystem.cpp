@@ -1642,38 +1642,13 @@ static void device_load_texture_internal(gs_device_t *device, gs_texture_t *tex,
 		device->commandList->SetDescriptorHeaps(2, heaps);
 	}
 
-	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandles[GS_MAX_TEXTURES];
-	for (int32_t i = 0; i < GS_MAX_TEXTURES; i += 1) {
-		if (!device->curTextures[i])
-			continue;
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle;
 
-		gs_texture_2d *curTexture = dynamic_cast<gs_texture_2d *>(device->curTextures[i]);
-		if (!curTexture)
-			continue;
-
-		cpuHandles[i] = curTexture->textureDescriptor.cpuHandle;
-	}
+	gs_texture_2d* curTexture = dynamic_cast<gs_texture_2d*>(device->curTextures[unit]);
+	cpuHandle = curTexture->textureDescriptor.cpuHandle;
 
 	D3D12_GPU_DESCRIPTOR_HANDLE gpuBaseDescriptor = {0};
-	device->WriteGPUDescriptor(device->gpu_descriptor_heap[0], cpuHandles, device->curPixelShader->textureCount,
-				   &gpuBaseDescriptor);
-
-	device->commandList->SetGraphicsRootDescriptorTable(device->curPipeline.curRootSignature.pixelTextureRootIndex,
-							    gpuBaseDescriptor);
-
-	memset(cpuHandles, 0, sizeof(cpuHandles));
-	for (int32_t i = 0; i < GS_MAX_TEXTURES; i += 1) {
-		if (!device->curSamplers[i])
-			continue;
-
-		cpuHandles[i] = device->curSamplers[i]->samplerDescriptor->cpuHandle;
-	}
-
-	device->WriteGPUDescriptor(device->gpu_descriptor_heap[1], cpuHandles, device->curPixelShader->samplerCount,
-				   &gpuBaseDescriptor);
-
-	device->commandList->SetGraphicsRootDescriptorTable(device->curPipeline.curRootSignature.pixelSamplerRootIndex,
-							    gpuBaseDescriptor);
+	device->WriteGPUDescriptor(device->gpu_descriptor_heap[0], &cpuHandle, 1, &gpuBaseDescriptor);
 }
 
 void device_load_texture(gs_device_t *device, gs_texture_t *tex, int unit)
@@ -1733,8 +1708,6 @@ static inline void clear_textures(gs_device_t *device)
 	ID3D12DescriptorHeap *rootDescriptorHeaps[2];
 	rootDescriptorHeaps[0] = device->gpu_descriptor_heap[0]->handle;
 	rootDescriptorHeaps[1] = device->gpu_descriptor_heap[1]->handle;
-
-	// device->commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);
 }
 
 void device_load_pixelshader(gs_device_t *device, gs_shader_t *pixelshader)
@@ -1765,6 +1738,8 @@ void device_load_pixelshader(gs_device_t *device, gs_shader_t *pixelshader)
 
 	for (size_t i = 0; i < GS_MAX_TEXTURES; i++)
 		device->curSamplers[i] = states[i];
+
+	// TODO Set Samples;
 }
 
 void device_load_default_samplerstate(gs_device_t *device, bool b_3d, int unit)
@@ -2170,12 +2145,12 @@ void device_present(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	if (curSwapChain) {
-		// device->commandList->OMSetRenderTargets(0, nullptr, false, nullptr);
 		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
 					   D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 		ID3D12CommandList *ppCommandLists[] = {device->commandList.Get()};
 		HRESULT hr = device->commandList->Close();
 		if (FAILED(hr)) {
+			assert(0);
 			HRESULT hr1 = device->device->GetDeviceRemovedReason();
 			blog(LOG_WARNING, "device_present (D3D12): No active swap");
 		}
@@ -2183,6 +2158,7 @@ void device_present(gs_device_t *device)
 		device->curFramebufferInvalidate = true;
 		hr = curSwapChain->swap->Present(1, 0);
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+			assert(0);
 			HRESULT hr1 = device->device->GetDeviceRemovedReason();
 			blog(LOG_WARNING, "device_present (D3D12): No active swap");
 		}
@@ -2638,7 +2614,7 @@ static inline void gs_vertexbuffer_flush_internal(gs_vertbuffer_t *vertbuffer, c
 		return;
 	}
 
-	if (data->points)
+	/*if (data->points)
 		vertbuffer->FlushBuffer(vertbuffer->vertexBuffer, data->points, sizeof(vec3));
 
 	if (vertbuffer->normalBuffer && data->normals)
@@ -2653,7 +2629,7 @@ static inline void gs_vertexbuffer_flush_internal(gs_vertbuffer_t *vertbuffer, c
 	for (size_t i = 0; i < num_tex; i++) {
 		gs_tvertarray &tv = data->tvarray[i];
 		vertbuffer->FlushBuffer(vertbuffer->uvBuffers[i], tv.array, tv.width * sizeof(float));
-	}
+	}*/
 }
 
 void gs_vertexbuffer_flush(gs_vertbuffer_t *vertbuffer)

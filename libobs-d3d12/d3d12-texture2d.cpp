@@ -348,8 +348,7 @@ gs_texture_2d::gs_texture_2d(gs_device_t *device, ID3D12Resource *obj)
 //{
 //}
 
-bool gs_texture_2d::Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST *map)
-{
+bool gs_texture_2d::Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST *map) {
 	auto desc = texture->GetDesc();
 	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> placedTextureDesc;
 	std::vector<uint32_t> numRows;
@@ -369,8 +368,6 @@ bool gs_texture_2d::Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST *map)
 	return true;
 }
 
-void gs_texture_2d::Unmap(int32_t subresourceIndex)
-{
+void gs_texture_2d::Unmap(int32_t subresourceIndex) {
 	upload_buffer->resource->Unmap(subresourceIndex, nullptr);
-	// todo
 }

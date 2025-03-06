@@ -2488,11 +2488,11 @@ bool gs_texture_map(gs_texture_t *tex, uint8_t **ptr, uint32_t *linesize)
 
 void gs_texture_unmap(gs_texture_t *tex)
 {
-	/*if (tex->type != GS_TEXTURE_2D)
+	if (tex->type != GS_TEXTURE_2D)
 		return;
 
 	gs_texture_2d *tex2d = static_cast<gs_texture_2d *>(tex);
-	tex2d->device->context->Unmap(tex2d->texture, 0);*/
+	tex2d->Unmap(0);
 }
 
 void *gs_texture_get_obj(gs_texture_t *tex)

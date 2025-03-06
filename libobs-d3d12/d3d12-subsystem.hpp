@@ -950,6 +950,10 @@ struct gs_index_buffer : gs_obj {
 
 	void InitBuffer();
 
+	inline ~gs_index_buffer() {
+		indexBuffer.Release();
+	}
+
 	inline void Release() { indexBuffer.Release(); }
 
 	gs_index_buffer(gs_device_t *device, enum gs_index_type type, void *indices, size_t num, uint32_t flags);
@@ -1086,6 +1090,12 @@ struct gs_graphics_pipeline {
 
 	gs_graphics_rootsignature curRootSignature;
 
+	inline ~gs_graphics_pipeline() {
+		pipeline_state.Release();
+		vertexShader = nullptr;
+		pixelShader = nullptr;
+	}
+
 	inline gs_graphics_pipeline() {}
 
 	inline gs_graphics_pipeline(ID3D12Device *device, const BlendState &blend, const RasterState &raster,
@@ -1181,6 +1191,10 @@ struct gs_device {
 	void UpdateGraphicsPipeline();
 
 	void LoadVertexBufferData();
+	void UpdateSamplerStateDescriptors();
+	void UpdateTextureDescriptors();
+
+	void WaitGPUComplete();
 
 	void CopyTex(ID3D12Resource *dst, uint32_t dst_x, uint32_t dst_y, gs_texture_t *src, uint32_t src_x,
 		     uint32_t src_y, uint32_t src_w, uint32_t src_h);

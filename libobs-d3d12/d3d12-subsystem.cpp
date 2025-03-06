@@ -1613,11 +1613,6 @@ void device_load_indexbuffer(gs_device_t *device, gs_indexbuffer_t *indexbuffer)
 	if (device->curIndexBuffer == indexbuffer)
 		return;
 
-	//  view.BufferLocation = buffer->virtualAddress + binding->offset;
-	//view.SizeInBytes = buffer->container->size - binding->offset;
-	//view.Format = indexElementSize == SDL_GPU_INDEXELEMENTSIZE_16BIT ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
-
-	//ID3D12GraphicsCommandList_IASetIndexBuffer(d3d12CommandBuffer->graphicsCommandList, &view);
 	device->curIndexBuffer = indexbuffer;
 }
 

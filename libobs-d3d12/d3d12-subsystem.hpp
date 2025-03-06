@@ -41,7 +41,6 @@ struct gs_vertex_shader;
 struct gs_pixel_shader;
 struct gs_staging_descriptor_pool;
 struct gs_staging_descriptor;
-struct gs_gpu_descriptor_heap_pool;
 struct gs_graphics_rootsignature;
 
 #define MAX_UNIFORM_BUFFERS_PER_STAGE 16
@@ -366,6 +365,9 @@ enum class gs_type {
 	gs_vertex_buffer,
 	gs_index_buffer,
 	gs_upload_buffer,
+	gs_gpu_buffer,
+	gs_uniform_buffer,
+	gs_download_buffer,
 	gs_texture_2d,
 	gs_zstencil_buffer,
 	gs_stage_surface,
@@ -379,13 +381,11 @@ enum class gs_type {
 	gs_texture_3d,
 };
 
-enum gs_buffer_type { gs_buffer_type_gpu, gs_buffer_type_uniform, gs_buffer_type_upload, gs_buffer_type_download };
-
 struct gs_obj {
-	gs_device_t *device;
-	gs_type obj_type;
-	gs_obj *next;
-	gs_obj **prev_next;
+	gs_device_t* device = nullptr;
+	gs_type obj_type = gs_type::gs_vertex_buffer;
+	gs_obj *next = nullptr;
+	gs_obj** prev_next = nullptr;
 
 	inline gs_obj() : device(nullptr), next(nullptr), prev_next(nullptr) {}
 
@@ -397,18 +397,7 @@ struct gs_staging_descriptor_heap {
 	ID3D12DescriptorHeap *handle = nullptr;
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart = {0};
-	int32_t descriptorSize = 0;
-};
-
-struct gs_gpu_descriptor_heap {
-	gs_gpu_descriptor_heap_pool *pool = 0;
-	ID3D12DescriptorHeap *handle = NULL;
-	D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	D3D12_GPU_DESCRIPTOR_HANDLE descriptorHeapGPUStart = {0};
-	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart = {0};
-	int32_t maxDescriptors = 0;
-	int32_t descriptorSize = 0;
-	int32_t currentDescriptorIndex = 0;
+	size_t descriptorSize = 0;
 };
 
 struct gs_staging_descriptor {
@@ -421,64 +410,50 @@ struct gs_staging_descriptor {
 struct gs_staging_descriptor_pool {
 	int32_t heapCount = 0;
 	gs_staging_descriptor_heap **heaps = NULL;
-	int32_t descriptorCapacity = 0;
-	int32_t freeDescriptorCount = 0;
+	size_t descriptorCapacity = 0;
+	size_t freeDescriptorCount = 0;
 	gs_staging_descriptor *freeDescriptors = NULL;
 };
 
-struct gs_gpu_descriptor_heap_pool {
-	int32_t capacity = 0;
-	int32_t count = 0;
-	gs_gpu_descriptor_heap **heaps = NULL;
-};
-
 gs_staging_descriptor_pool *gs_staging_descriptor_pool_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type);
-
 void gs_expand_staging_descriptor_pool(ID3D12Device *device, gs_staging_descriptor_pool *pool);
-
 void gs_staging_descriptor_pool_destroy(gs_staging_descriptor_pool *pool);
 
 void gs_staging_descriptor_release(gs_staging_descriptor *cpuDescriptor);
 
-gs_gpu_descriptor_heap_pool *gs_gpu_descriptor_heap_pool_create(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type);
+struct gs_gpu_descriptor_heap {
+	ID3D12DescriptorHeap* handle = NULL;
+	D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	D3D12_GPU_DESCRIPTOR_HANDLE descriptorHeapGPUStart = { 0 };
+	D3D12_CPU_DESCRIPTOR_HANDLE descriptorHeapCPUStart = { 0 };
+	size_t maxDescriptors = 0;
+	size_t descriptorSize = 0;
+	int32_t currentDescriptorIndex = 0;
+};
 
-void gs_gpu_descriptor_heap_pool_destroy(gs_gpu_descriptor_heap_pool *pool);
+gs_gpu_descriptor_heap* gs_gpu_descriptor_heap_create(ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE type,
+	size_t descriptorCount);
+void gs_gpu_descriptor_heap_destroy(gs_gpu_descriptor_heap* heap);
+void gs_gpu_descriptor_heap_reset(gs_gpu_descriptor_heap* heap);
 
-gs_gpu_descriptor_heap *gs_acquire_gpu_descriptor_heap(ID3D12Device *device, gs_gpu_descriptor_heap_pool *pool,
-						       D3D12_DESCRIPTOR_HEAP_TYPE type);
-
-void gs_gpu_descriptor_heap_release(gs_gpu_descriptor_heap *heap);
-
-struct gs_buffer {
+struct gs_buffer : gs_obj {
 	ComPtr<ID3D12Resource> resource;
 	gs_staging_descriptor uavDescriptor;
 	gs_staging_descriptor srvDescriptor;
 	gs_staging_descriptor cbvDescriptor;
-	D3D12_GPU_VIRTUAL_ADDRESS virtualAddress;
+	D3D12_GPU_VIRTUAL_ADDRESS gpuVirtualAddress;
+
 	bool transitioned = false;
-	gs_buffer_type type = gs_buffer_type_upload;
 	uint32_t usageFlags = 0;
 
-	int32_t size;
-
-	gs_device *device;
-	gs_buffer(gs_device *device, int32_t size, gs_buffer_type type, uint32_t flags);
+	int32_t size = 0;
+	gs_buffer(gs_device *device, int32_t size, gs_type type, uint32_t flags);
 	inline ~gs_buffer() {}
 
 	void UploadToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
+	void UploadToBuffer(uint8_t* data, size_t size, gs_buffer* dest, uint32_t dest_offset);
 	void CpoyBufferToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
 	void DownloadFromBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
-};
-
-struct GPUTextureRegion {
-	uint32_t mipLevelIndex;
-	uint32_t layerIndex;
-	uint32_t x;
-	uint32_t y;
-	uint32_t z;
-	uint32_t w;
-	uint32_t h;
-	uint32_t depth;
 };
 
 struct gs_texture : gs_obj {
@@ -547,8 +522,8 @@ struct gs_texture_2d : gs_texture {
 	void BackupTexture(const uint8_t *const *data);
 	void GetSharedHandle(IDXGIResource *dxgi_res);
 
-	void UploadToTexture(gs_buffer *source, uint32_t source_offset, uint32_t source_pixels_per_row,
-			     uint32_t souce_rows_per_layer, gs_texture_2d *dest, GPUTextureRegion textureRegion);
+	/*void UploadToTexture(gs_buffer *source, uint32_t source_offset, uint32_t source_pixels_per_row,
+			     uint32_t souce_rows_per_layer, gs_texture_2d *dest, GPUTextureRegion textureRegion);*/
 	bool Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST *map);
 	void Unmap(int32_t subresourceIndex);
 
@@ -714,9 +689,9 @@ struct gs_shader : gs_obj {
 	gs_shader_type type;
 	std::vector<gs_shader_param> params;
 
-	int32_t samplerCount = 0;
-	int32_t textureCount = 0;
-	int32_t uniform32BitBufferCount = 0; // const buffer
+	size_t samplerCount = 0;
+	size_t textureCount = 0;
+	size_t uniform32BitBufferCount = 0; // const buffer
 	size_t constantSize;
 
 	std::vector<uint8_t> data;
@@ -889,33 +864,23 @@ struct gs_graphics_rootsignature {
 
 struct gs_vertex_buffer : gs_obj {
 	ComPtr<ID3D12Resource> vertexBuffer;
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
-
 	ComPtr<ID3D12Resource> normalBuffer;
-	D3D12_VERTEX_BUFFER_VIEW normalBufferView;
-
 	ComPtr<ID3D12Resource> colorBuffer;
-	D3D12_VERTEX_BUFFER_VIEW colorBufferView;
-
 	ComPtr<ID3D12Resource> tangentBuffer;
 	D3D12_VERTEX_BUFFER_VIEW tangentBufferView;
 
 	std::vector<ComPtr<ID3D12Resource>> uvBuffers;
-	std::vector<D3D12_VERTEX_BUFFER_VIEW> uvBufferViews;
 
 	bool dynamic;
 	VBDataPtr vbd;
 	size_t numVerts;
 	std::vector<size_t> uvSizes;
 
-	std::vector<struct vec3> vertexBufferData;
-
 	void FlushBuffer(ID3D12Resource *buffer, void *array, size_t elementSize);
 
 	UINT MakeBufferList(gs_vertex_shader *shader, D3D12_VERTEX_BUFFER_VIEW *views);
 
-	void InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer,
-			D3D12_VERTEX_BUFFER_VIEW *view);
+	void InitBuffer(const size_t elementSize, const size_t numVerts, void *array, ID3D12Resource **buffer);
 
 	void BuildBuffers();
 
@@ -1090,6 +1055,16 @@ struct gs_graphics_pipeline {
 
 	gs_graphics_rootsignature curRootSignature;
 
+	inline bool operator==(const gs_graphics_pipeline &other) const
+	{
+		return pipeline_state == other.pipeline_state && blendState == other.blendState &&
+		       rasterState == other.rasterState && zstencilState == other.zstencilState &&
+		       vertexShader == other.vertexShader && pixelShader == other.pixelShader &&
+		       topologyType == other.topologyType && zsformat == other.zsformat &&
+		       rtvformat == other.rtvformat && curRootSignature == other.curRootSignature;
+	}
+
+	inline bool operator!=(const gs_graphics_pipeline& other) const { return !(*this == other); }
 	inline ~gs_graphics_pipeline() {
 		pipeline_state.Release();
 		vertexShader = nullptr;
@@ -1151,8 +1126,6 @@ struct gs_device {
 	BlendState curBlendState;
 
 	gs_staging_descriptor_pool *stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
-	gs_gpu_descriptor_heap_pool *gpuSamplerDescriptorPool = nullptr;
-	gs_gpu_descriptor_heap_pool *gpuSRVDescriptorPool = nullptr;
 
 	gs_gpu_descriptor_heap *gpu_descriptor_heap[2]; // 0 view 1 sampler
 
@@ -1188,11 +1161,11 @@ struct gs_device {
 	void ConvertBlendState(D3D12_BLEND_DESC &desc, const BlendState &bs);
 
 	void GeneratePipelineState(gs_graphics_pipeline &pipeline);
-	void UpdateGraphicsPipeline();
 
+	void LoadGraphicsPipeline(gs_graphics_pipeline& new_pipeline);
 	void LoadVertexBufferData();
-	void UpdateSamplerStateDescriptors();
-	void UpdateTextureDescriptors();
+	void LoadSamplerDescriptors();
+	void LoadTextureDescriptors();
 
 	void WaitGPUComplete();
 

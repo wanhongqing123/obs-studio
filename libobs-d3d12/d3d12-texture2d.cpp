@@ -159,7 +159,7 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	requiredSize = (requiredSize + (D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1)) &
 		       ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
 
-	upload_buffer = new gs_buffer(device, requiredSize, gs_buffer_type_upload, 0);
+	upload_buffer = new gs_buffer(device, requiredSize, gs_type::gs_upload_buffer, 0);
 }
 
 void gs_texture_2d::InitResourceView()
@@ -343,10 +343,10 @@ gs_texture_2d::gs_texture_2d(gs_device_t *device, ID3D12Resource *obj)
 	InitResourceView();
 }
 
-void gs_texture_2d::UploadToTexture(gs_buffer *source, uint32_t source_offset, uint32_t source_pixels_per_row,
-				    uint32_t souce_rows_per_layer, gs_texture_2d *dest, GPUTextureRegion textureRegion)
-{
-}
+//void gs_texture_2d::UploadToTexture(gs_buffer *source, uint32_t source_offset, uint32_t source_pixels_per_row,
+//				    uint32_t souce_rows_per_layer, gs_texture_2d *dest, GPUTextureRegion textureRegion)
+//{
+//}
 
 bool gs_texture_2d::Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST *map)
 {

@@ -17,10 +17,9 @@
 
 #include "d3d12-subsystem.hpp"
 
-gs_buffer::gs_buffer(gs_device *device_, int32_t size_, gs_buffer_type type_, uint32_t flags)
-	: device(device_),
+gs_buffer::gs_buffer(gs_device *device, int32_t size_, gs_type type, uint32_t flags)
+	: gs_obj(device, type),
 	  size(size_),
-	  type(type_),
 	  usageFlags(flags)
 {
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc;
@@ -39,24 +38,24 @@ gs_buffer::gs_buffer(gs_device *device_, int32_t size_, gs_buffer_type type_, ui
 	heapProperties.CreationNodeMask = 0; // We don't do multi-adapter operation
 	heapProperties.VisibleNodeMask = 0;  // We don't do multi-adapter operation
 
-	if (type == gs_buffer_type_gpu) {
+	if (type == gs_type::gs_gpu_buffer) {
 		heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
 		heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 		heapFlags = D3D12_HEAP_FLAG_NONE;
-	} else if (type == gs_buffer_type_upload) {
+	} else if (type == gs_type::gs_upload_buffer) {
 		heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
 		heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 		heapFlags = D3D12_HEAP_FLAG_NONE;
 		initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
-	} else if (type == gs_buffer_type_download) {
+	} else if (type == gs_type::gs_download_buffer) {
 		heapProperties.Type = D3D12_HEAP_TYPE_READBACK;
 		heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 		heapFlags = D3D12_HEAP_FLAG_NONE;
 		initialState = D3D12_RESOURCE_STATE_COPY_DEST;
-	} else if (type == gs_buffer_type_uniform) {
+	} else if (type == gs_type::gs_uniform_buffer) {
 		heapProperties.Type = D3D12_HEAP_TYPE_UPLOAD;
 		heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 		heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
@@ -120,7 +119,7 @@ gs_buffer::gs_buffer(gs_device *device_, int32_t size_, gs_buffer_type type_, ui
 	}
 
 	// FIXME: we may not need a CBV since we use root descriptors
-	if (type == gs_buffer_type_uniform) {
+	if (type == gs_type::gs_uniform_buffer) {
 		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, &cbvDescriptor);
 
 		cbvDesc.BufferLocation = resource->GetGPUVirtualAddress();
@@ -130,11 +129,7 @@ gs_buffer::gs_buffer(gs_device *device_, int32_t size_, gs_buffer_type type_, ui
 		device->device->CreateConstantBufferView(&cbvDesc, cbvDescriptor.cpuHandle);
 	}
 
-	virtualAddress = 0;
-	if (type == gs_buffer_type_gpu || type == gs_buffer_type_uniform) {
-		virtualAddress = resource->GetGPUVirtualAddress();
-	}
-
+	gpuVirtualAddress = resource->GetGPUVirtualAddress();
 	transitioned = initialState != D3D12_RESOURCE_STATE_COMMON;
 }
 
@@ -162,7 +157,6 @@ static void ResourceBarrier(ID3D12GraphicsCommandList *commandList, D3D12_RESOUR
 	D3D12_RESOURCE_BARRIER barrierDesc[2];
 	uint32_t numBarriers = 0;
 
-	// No transition barrier is needed if the state is not changing.
 	if (sourceState != destinationState) {
 		barrierDesc[numBarriers].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 		barrierDesc[numBarriers].Flags = (D3D12_RESOURCE_BARRIER_FLAGS)0;
@@ -214,6 +208,10 @@ void gs_buffer::UploadToBuffer(gs_buffer *source, uint32_t source_offset, gs_buf
 	BufferTransitionFromDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);
 	device->commandList->CopyBufferRegion(dest->resource, dest_offset, source->resource, source_offset, dest->size);
 	BufferTransitionToDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);
+}
+
+void gs_buffer::UploadToBuffer(uint8_t* data, size_t size, gs_buffer* dest, uint32_t dest_offset) {
+
 }
 
 void gs_buffer::CpoyBufferToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset)

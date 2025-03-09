@@ -452,6 +452,7 @@ struct gs_buffer : gs_obj {
 
 	void UploadToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
 	void UploadToBuffer(uint8_t* data, size_t size, gs_buffer* dest, uint32_t dest_offset);
+
 	void CpoyBufferToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
 	void DownloadFromBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset);
 };
@@ -491,6 +492,7 @@ struct gs_texture_2d : gs_texture {
 
 	gs_staging_descriptor textureDescriptor;
 	ComPtr<ID3D12Resource> texture;
+	D3D12_RESOURCE_STATES resourceState = (D3D12_RESOURCE_STATES)0;
 
 	gs_staging_descriptor renderTargetDescriptor[6] = {0};
 	gs_staging_descriptor renderTargetLinearDescriptor[6] = {0};
@@ -521,6 +523,7 @@ struct gs_texture_2d : gs_texture {
 	void InitRenderTargets();
 	void BackupTexture(const uint8_t *const *data);
 	void GetSharedHandle(IDXGIResource *dxgi_res);
+	void UpdateSubresources();
 
 	/*void UploadToTexture(gs_buffer *source, uint32_t source_offset, uint32_t source_pixels_per_row,
 			     uint32_t souce_rows_per_layer, gs_texture_2d *dest, GPUTextureRegion textureRegion);*/
@@ -1088,6 +1091,21 @@ struct gs_graphics_pipeline {
 		  curRootSignature(device, vertexShader_, pixelShader_)
 	{
 	}
+};
+
+struct gs_command_context {
+	// CommandListManager* m_OwningManager;
+	ID3D12GraphicsCommandList* m_CommandList;
+	ID3D12CommandAllocator* m_CurrentAllocator;
+
+	ID3D12RootSignature* m_CurGraphicsRootSignature;
+	ID3D12RootSignature* m_CurComputeRootSignature;
+	ID3D12PipelineState* m_CurPipelineState;
+
+	D3D12_RESOURCE_BARRIER m_ResourceBarrierBuffer[16];
+	UINT m_NumBarriersToFlush;
+
+	ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
 };
 
 struct gs_device {

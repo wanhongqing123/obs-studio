@@ -78,6 +78,7 @@ void gs_texture_2d::BackupTexture(const uint8_t *const *data)
 	}
 }
 
+
 void gs_texture_2d::InitTexture(const uint8_t *const *data)
 {
 	HRESULT hr;
@@ -108,7 +109,7 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	D3D12_CLEAR_VALUE clearValue;
 	memset(&clearValue, 0, sizeof(clearValue));
 
-	D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE;
+	D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
 	clearValue.Format = td.Format;
 
@@ -128,38 +129,103 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	td.Flags = resFlags;
 	hr = device->device->CreateCommittedResource(&heapProp, heapFlags, &td, initialState, nullptr,
 						     IID_PPV_ARGS(&texture));
+
+	resourceState = initialState;
 	if (FAILED(hr))
 		throw HRError("Failed to create 2D texture", hr);
+
+	if (!isRenderTarget) {
+		auto desc = texture->GetDesc();
+		uint64_t requiredSize = 0;
+		std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> placedTextureDesc;
+		std::vector<uint32_t> numRows;
+		std::vector<uint64_t> rowSizeInBytes;
+
+		placedTextureDesc.resize(levels * layerCountOrDepth);
+
+		numRows.resize(levels * layerCountOrDepth);
+
+		rowSizeInBytes.resize(levels * layerCountOrDepth);
+
+		device->device->GetCopyableFootprints(&desc, 0, levels * layerCountOrDepth, 0, placedTextureDesc.data(),
+			numRows.data(), rowSizeInBytes.data(), &requiredSize);
+
+		uint32_t bbp = gs_get_format_bpp(format);
+		uint32_t rowPitch = bbp * width / 8;
+
+		uint64_t actually_size = rowPitch * height * levels * layerCountOrDepth;
+
+		requiredSize = (requiredSize + (D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1)) &
+			~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
+
+		upload_buffer = new gs_buffer(device, requiredSize, gs_type::gs_upload_buffer, 0);
+	}
 
 	if (data) {
 		BackupTexture(data);
 		InitSRD(srd);
+		UpdateSubresources();
 	}
+}
 
-	auto desc = texture->GetDesc();
-	uint64_t requiredSize = 0;
+void gs_texture_2d::UpdateSubresources() {
 	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> placedTextureDesc;
 	std::vector<uint32_t> numRows;
 	std::vector<uint64_t> rowSizeInBytes;
 
+
 	placedTextureDesc.resize(levels * layerCountOrDepth);
-
 	numRows.resize(levels * layerCountOrDepth);
-
 	rowSizeInBytes.resize(levels * layerCountOrDepth);
 
+	uint8_t* pData = nullptr;
+	upload_buffer->resource->Map(0, nullptr, (void**)&pData);
+
+	auto desc = texture->GetDesc();
 	device->device->GetCopyableFootprints(&desc, 0, levels * layerCountOrDepth, 0, placedTextureDesc.data(),
-					      numRows.data(), rowSizeInBytes.data(), &requiredSize);
+		numRows.data(), rowSizeInBytes.data(), nullptr);
 
-	uint32_t bbp = gs_get_format_bpp(format);
-	uint32_t rowPitch = bbp * width / 8;
+	for (size_t i = 0; i < srd.size(); ++i) {
+		uint8_t *pDest = pData + placedTextureDesc[i].Offset;
+		uint8_t *src = (uint8_t *)srd[i].pData;
 
-	uint64_t actually_size = rowPitch * height * levels * layerCountOrDepth;
+		for (size_t j = 0; j < placedTextureDesc[i].Footprint.Depth; ++j) {
+			uint8_t *pDestSlice = pDest + placedTextureDesc[i].Footprint.RowPitch * numRows[i] * j;
+			uint8_t *pSrcSlice = src + srd[i].SlicePitch * j;
+			for (size_t k = 0; k < numRows[i]; ++k) {
+				memcpy(pDestSlice + placedTextureDesc[i].Footprint.RowPitch * k,
+				       pSrcSlice + srd[i].RowPitch * k, rowSizeInBytes[i]);
+			}
+		}
+	}
 
-	requiredSize = (requiredSize + (D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1)) &
-		       ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
+	upload_buffer->resource->Unmap(0, nullptr);
 
-	upload_buffer = new gs_buffer(device, requiredSize, gs_type::gs_upload_buffer, 0);
+	device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_COPY_DEST);
+	resourceState = D3D12_RESOURCE_STATE_COPY_DEST;
+	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+		device->commandList->CopyBufferRegion(texture, 0, upload_buffer->resource, placedTextureDesc[0].Offset,
+						      placedTextureDesc[0].Footprint.Width);
+	}
+	else
+	{
+		for (UINT i = 0; i < srd.size(); ++i)
+		{
+			D3D12_TEXTURE_COPY_LOCATION dst;
+			dst.pResource = texture;
+			dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+			dst.PlacedFootprint = {};
+			dst.SubresourceIndex = i;
+
+			D3D12_TEXTURE_COPY_LOCATION src;
+			src.pResource = upload_buffer->resource;
+			src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+			src.PlacedFootprint = placedTextureDesc[i];
+			device->commandList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+		}
+	}
+	device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 }
 
 void gs_texture_2d::InitResourceView()
@@ -343,31 +409,69 @@ gs_texture_2d::gs_texture_2d(gs_device_t *device, ID3D12Resource *obj)
 	InitResourceView();
 }
 
-//void gs_texture_2d::UploadToTexture(gs_buffer *source, uint32_t source_offset, uint32_t source_pixels_per_row,
-//				    uint32_t souce_rows_per_layer, gs_texture_2d *dest, GPUTextureRegion textureRegion)
-//{
-//}
-
-bool gs_texture_2d::Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST *map) {
+bool gs_texture_2d::Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST *map)
+{
 	auto desc = texture->GetDesc();
+	uint8_t *pData = nullptr;
 	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> placedTextureDesc;
 	std::vector<uint32_t> numRows;
 	std::vector<uint64_t> rowSizeInBytes;
+
 	placedTextureDesc.resize(levels * layerCountOrDepth);
 	numRows.resize(levels * layerCountOrDepth);
 	rowSizeInBytes.resize(levels * layerCountOrDepth);
 
 	device->device->GetCopyableFootprints(&desc, 0, levels * layerCountOrDepth, 0, placedTextureDesc.data(),
-					      numRows.data(), rowSizeInBytes.data(), nullptr);
+		numRows.data(), rowSizeInBytes.data(), nullptr);
 
-	uint8_t *pData = nullptr;
 	upload_buffer->resource->Map(0, nullptr, (void **)&pData);
 	map->pData = pData + placedTextureDesc[subresourceIndex].Offset;
 	map->RowPitch = placedTextureDesc[subresourceIndex].Footprint.RowPitch;
 	map->SlicePitch = placedTextureDesc[subresourceIndex].Footprint.RowPitch * numRows[subresourceIndex];
+
 	return true;
 }
 
-void gs_texture_2d::Unmap(int32_t subresourceIndex) {
+void gs_texture_2d::Unmap(int32_t subresourceIndex)
+{
 	upload_buffer->resource->Unmap(subresourceIndex, nullptr);
+
+	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> placedTextureDesc;
+	std::vector<uint32_t> numRows;
+	std::vector<uint64_t> rowSizeInBytes;
+
+	placedTextureDesc.resize(levels * layerCountOrDepth);
+	numRows.resize(levels * layerCountOrDepth);
+	rowSizeInBytes.resize(levels * layerCountOrDepth);
+
+	uint8_t *pData = nullptr;
+	upload_buffer->resource->Map(0, nullptr, (void **)&pData);
+
+	auto desc = texture->GetDesc();
+	device->device->GetCopyableFootprints(&desc, 0, levels * layerCountOrDepth, 0, placedTextureDesc.data(),
+					      numRows.data(), rowSizeInBytes.data(), nullptr);
+
+	device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_COPY_DEST);
+	resourceState = D3D12_RESOURCE_STATE_COPY_DEST;
+
+	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+		device->commandList->CopyBufferRegion(texture, 0, upload_buffer->resource, placedTextureDesc[0].Offset,
+						      placedTextureDesc[0].Footprint.Width);
+	} else {
+
+		D3D12_TEXTURE_COPY_LOCATION dst;
+		dst.pResource = texture;
+		dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+		dst.PlacedFootprint = {};
+		dst.SubresourceIndex = subresourceIndex;
+
+		D3D12_TEXTURE_COPY_LOCATION src;
+		src.pResource = upload_buffer->resource;
+		src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+		src.PlacedFootprint = placedTextureDesc[subresourceIndex];
+		device->commandList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+		
+	}
+	device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 }

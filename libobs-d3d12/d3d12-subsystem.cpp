@@ -474,7 +474,7 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 
 	fastClearSupported = FastClearSupported(desc.VendorId, driverVersion);
 
-	// WaitGPUComplete();
+	WaitGPUComplete();
 	blog(LOG_INFO, "D3D12 loaded successfully, feature level used: %x", (unsigned int)levelUsed);
 }
 
@@ -702,20 +702,33 @@ void gs_device::LoadTextureDescriptors() {
 	}
 }
 
-void gs_device::WaitGPUComplete() {
-	/*ID3D12CommandList* ppCommandLists[] = {commandList.Get()};
-	commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-	const uint64_t curfenceValue = fenceValue;
+void gs_device::WaitGPUComplete()
+{
+	/*const uint64_t curfenceValue = fenceValue;
 	commandQueue->Signal(fence, curfenceValue);
 	if (fence->GetCompletedValue() < curfenceValue) {
-		HRESULT hr = (fence->SetEventOnCompletion(curfenceValue, fenceEvent));
-		if (FAILED(hr))
+		HRESULT hr = fence->SetEventOnCompletion(curfenceValue, fenceEvent);
+		if (FAILED(hr)) {
+			assert(0);
 			throw HRError("fence Completion failed", hr);
+		}
 		WaitForSingleObject(fenceEvent, INFINITE);
 	}
 	fenceValue++;
-	commandList->Reset(commandAllocator, curPipeline.pipeline_state ? curPipeline.pipeline_state : nullptr);*/
+	HRESULT hr = commandList->Close();
+	if (FAILED(hr)) {
+		assert(0);
+		return;
+	}
+	ID3D12CommandList *ppCommandLists[] = {commandList.Get()};
+	commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	commandAllocator->Reset();
+	commandList->Reset(commandAllocator, nullptr);
+	ID3D12DescriptorHeap *rootDescriptorHeaps[2];
+	rootDescriptorHeaps[0] = gpu_descriptor_heap[0]->handle;
+	rootDescriptorHeaps[1] = gpu_descriptor_heap[1]->handle;
+	commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);*/
 }
 
 
@@ -2128,7 +2141,7 @@ void device_clear(gs_device_t *device, uint32_t clear_flags, const struct vec4 *
 	}
 }
 
-bool device_is_present_ready(gs_device_t *device)
+bool device_is_present_ready(gs_device_t* device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	bool ready = curSwapChain != nullptr;
@@ -2137,8 +2150,10 @@ bool device_is_present_ready(gs_device_t *device)
 		device->commandQueue->Signal(device->fence, curfenceValue);
 		if (device->fence->GetCompletedValue() < curfenceValue) {
 			HRESULT hr = (device->fence->SetEventOnCompletion(curfenceValue, device->fenceEvent));
-			if (FAILED(hr))
+			if (FAILED(hr)) {
+				assert(0);
 				throw HRError("fence Completion failed", hr);
+			}
 			WaitForSingleObject(device->fenceEvent, INFINITE);
 		}
 		device->fenceValue++;
@@ -2156,6 +2171,7 @@ bool device_is_present_ready(gs_device_t *device)
 
 	return ready;
 }
+
 
 void device_present(gs_device_t *device)
 {
@@ -2178,6 +2194,7 @@ void device_present(gs_device_t *device)
 			HRESULT hr1 = device->device->GetDeviceRemovedReason();
 			blog(LOG_WARNING, "device_present (D3D12): No active swap");
 		}
+
 	} else {
 		blog(LOG_WARNING, "device_present (D3D12): No active swap");
 	}

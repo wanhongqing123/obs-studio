@@ -16,6 +16,7 @@
 ******************************************************************************/
 
 #include <util/base.h>
+#include "d3dx12.h"
 #include "d3d12-subsystem.hpp"
 
 void gs_texture_2d::InitSRD(std::vector<D3D12_SUBRESOURCE_DATA> &srd)
@@ -164,11 +165,13 @@ void gs_texture_2d::InitTexture(const uint8_t *const *data)
 	if (data) {
 		BackupTexture(data);
 		InitSRD(srd);
-		UpdateSubresources();
 	}
 }
 
 void gs_texture_2d::UpdateSubresources() {
+	if (!needUpdate)
+		return;
+
 	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> placedTextureDesc;
 	std::vector<uint32_t> numRows;
 	std::vector<uint64_t> rowSizeInBytes;
@@ -178,12 +181,41 @@ void gs_texture_2d::UpdateSubresources() {
 	numRows.resize(levels * layerCountOrDepth);
 	rowSizeInBytes.resize(levels * layerCountOrDepth);
 
-	uint8_t* pData = nullptr;
-	upload_buffer->resource->Map(0, nullptr, (void**)&pData);
-
+	needUpdate = false;
 	auto desc = texture->GetDesc();
 	device->device->GetCopyableFootprints(&desc, 0, levels * layerCountOrDepth, 0, placedTextureDesc.data(),
 		numRows.data(), rowSizeInBytes.data(), nullptr);
+
+	if (isDynamic) {
+		device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_COPY_DEST);
+		resourceState = D3D12_RESOURCE_STATE_COPY_DEST;
+
+		if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+			device->commandList->CopyBufferRegion(texture, 0, upload_buffer->resource, placedTextureDesc[0].Offset,
+				placedTextureDesc[0].Footprint.Width);
+		}
+		else {
+
+			D3D12_TEXTURE_COPY_LOCATION dst;
+			dst.pResource = texture;
+			dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+			dst.PlacedFootprint = {};
+			dst.SubresourceIndex = 0;
+
+			D3D12_TEXTURE_COPY_LOCATION src;
+			src.pResource = upload_buffer->resource;
+			src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+			src.PlacedFootprint = placedTextureDesc[0];
+			device->commandList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+
+		}
+		device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+		return;
+	}
+
+	uint8_t* pData = nullptr;
+	upload_buffer->resource->Map(0, nullptr, (void**)&pData);
 
 	for (size_t i = 0; i < srd.size(); ++i) {
 		uint8_t *pDest = pData + placedTextureDesc[i].Offset;
@@ -435,43 +467,5 @@ bool gs_texture_2d::Map(int32_t subresourceIndex, D3D12_MEMCPY_DEST *map)
 void gs_texture_2d::Unmap(int32_t subresourceIndex)
 {
 	upload_buffer->resource->Unmap(subresourceIndex, nullptr);
-
-	std::vector<D3D12_PLACED_SUBRESOURCE_FOOTPRINT> placedTextureDesc;
-	std::vector<uint32_t> numRows;
-	std::vector<uint64_t> rowSizeInBytes;
-
-	placedTextureDesc.resize(levels * layerCountOrDepth);
-	numRows.resize(levels * layerCountOrDepth);
-	rowSizeInBytes.resize(levels * layerCountOrDepth);
-
-	uint8_t *pData = nullptr;
-	upload_buffer->resource->Map(0, nullptr, (void **)&pData);
-
-	auto desc = texture->GetDesc();
-	device->device->GetCopyableFootprints(&desc, 0, levels * layerCountOrDepth, 0, placedTextureDesc.data(),
-					      numRows.data(), rowSizeInBytes.data(), nullptr);
-
-	device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_COPY_DEST);
-	resourceState = D3D12_RESOURCE_STATE_COPY_DEST;
-
-	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
-		device->commandList->CopyBufferRegion(texture, 0, upload_buffer->resource, placedTextureDesc[0].Offset,
-						      placedTextureDesc[0].Footprint.Width);
-	} else {
-
-		D3D12_TEXTURE_COPY_LOCATION dst;
-		dst.pResource = texture;
-		dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-		dst.PlacedFootprint = {};
-		dst.SubresourceIndex = subresourceIndex;
-
-		D3D12_TEXTURE_COPY_LOCATION src;
-		src.pResource = upload_buffer->resource;
-		src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-		src.PlacedFootprint = placedTextureDesc[subresourceIndex];
-		device->commandList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
-		
-	}
-	device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	needUpdate = true;
 }

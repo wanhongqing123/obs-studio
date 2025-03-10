@@ -690,6 +690,7 @@ void gs_device::LoadTextureDescriptors() {
 	for (size_t i = 0; i < curPixelShader->textureCount; ++i) {
 		gs_texture_2d* curTexture = dynamic_cast<gs_texture_2d*>(curTextures[i]);
 		cpuHandles[i] = curTexture->textureDescriptor.cpuHandle;
+		curTexture->UpdateSubresources();
 	}
 
 	D3D12_GPU_DESCRIPTOR_HANDLE gpuBaseDescriptor = { 0 };

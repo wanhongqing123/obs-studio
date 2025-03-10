@@ -464,6 +464,7 @@ struct gs_texture : gs_obj {
 	int32_t sampleCount = 1;
 	gs_color_format format = GS_BGRA;
 
+	bool needUpdate = false;
 	inline gs_texture(gs_texture_type type, uint32_t levels, gs_color_format format)
 		: type(type),
 		  levels(levels),

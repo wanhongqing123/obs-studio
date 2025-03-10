@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.28...3.30)
 add_library(libobs-d3d12 MODULE)
 add_library(OBS::libobs-d3d12 ALIAS libobs-d3d12)
 
-target_sources(libobs-d3d12 PRIVATE 
+target_sources(libobs-d3d12 PRIVATE
+    d3dx12.h
     d3d12-indexbuffer.cpp
     d3d12-samplerstate.cpp
     d3d12-shader.cpp

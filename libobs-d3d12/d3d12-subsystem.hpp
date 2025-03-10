@@ -1094,28 +1094,69 @@ struct gs_graphics_pipeline {
 	}
 };
 
-struct gs_command_context {
-	// CommandListManager* m_OwningManager;
-	ID3D12GraphicsCommandList* m_CommandList;
-	ID3D12CommandAllocator* m_CurrentAllocator;
+struct gs_command_queue {
+	gs_device* device = nullptr;
+	ID3D12CommandQueue* commandQueue = nullptr;
+	D3D12_COMMAND_LIST_TYPE type = D3D12_COMMAND_LIST_TYPE::D3D12_COMMAND_LIST_TYPE_DIRECT;
+	ID3D12Fence* fence = nullptr;
+	uint64_t nextFenceValue = 0;
+	uint64_t lastCompletedFenceValue = 0;
+	HANDLE fenceEventHandle = 0;
 
-	ID3D12RootSignature* m_CurGraphicsRootSignature;
-	ID3D12RootSignature* m_CurComputeRootSignature;
-	ID3D12PipelineState* m_CurPipelineState;
+	inline gs_command_queue() {}
+	inline gs_command_queue(gs_device_t* device_, D3D12_COMMAND_LIST_TYPE type_) : device(device_), type(type_) {
+
+	}
+	inline ~gs_command_queue() {
+		Release();
+	}
+
+	void Release();
+
+	uint64_t IncrementFence(void);
+	bool IsFenceComplete(uint64_t FenceValue);
+	void StallForFence(uint64_t FenceValue);
+	void StallForProducer(gs_command_queue& Producer);
+	void WaitForFence(uint64_t FenceValue);
+	void WaitForIdle(void) { WaitForFence(IncrementFence()); }
+
+	uint64_t ExecuteCommandList(ID3D12CommandList* list);
+	ID3D12CommandAllocator* RequestAllocator(void);
+	void DiscardAllocator(uint64_t FenceValueForReset, ID3D12CommandAllocator* Allocator);
+};
+
+struct gs_commandlist {
+	gs_device* device = nullptr;
+	gs_command_queue* graphicsQueue;
+	gs_command_queue* computeQueue;
+	gs_command_queue* copyQueue;
+
+	inline gs_commandlist(gs_device* device) {
+		graphicsQueue = new gs_command_queue(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
+		computeQueue = new gs_command_queue(device, D3D12_COMMAND_LIST_TYPE_COMPUTE);
+		copyQueue = new gs_command_queue(device, D3D12_COMMAND_LIST_TYPE_COPY);
+	}
+};
+
+struct gs_command_context {
+	gs_device* device = nullptr;
+	ID3D12GraphicsCommandList* commandList = nullptr;
+	ID3D12CommandAllocator* currentAllocator = nullptr;
+
+	gs_graphics_pipeline* pipeline_state = nullptr;
 
 	D3D12_RESOURCE_BARRIER m_ResourceBarrierBuffer[16];
-	UINT m_NumBarriersToFlush;
+	UINT numBarriersToFlush;
 
 	ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
-};
 
-struct gs_commandlist_manager {
+	inline ID3D12GraphicsCommandList* CurrentCommandList() {
+		return commandList;
+	}
 
-};
-
-struct gs_command_queue {
-
-
+	static gs_command_context& Begin(gs_device* device);
+	uint64_t Flush(bool waitForCompletion = false);
+	uint64_t Finish(bool waitForCompletion = false);
 };
 
 struct gs_device {
@@ -1196,6 +1237,11 @@ struct gs_device {
 	void LoadTextureDescriptors();
 
 	void WaitGPUComplete();
+
+	//std::vector<CommandContext*> sm_ContextPool[4];
+	// std::queue<CommandContext*> sm_AvailableContexts[4];
+	//CommandContext* AllocateContext(D3D12_COMMAND_LIST_TYPE Type);
+	//void FreeContext(CommandContext*);
 
 	void CopyTex(ID3D12Resource *dst, uint32_t dst_x, uint32_t dst_y, gs_texture_t *src, uint32_t src_x,
 		     uint32_t src_y, uint32_t src_w, uint32_t src_h);

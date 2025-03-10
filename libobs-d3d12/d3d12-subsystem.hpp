@@ -1109,6 +1109,15 @@ struct gs_command_context {
 	ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
 };
 
+struct gs_commandlist_manager {
+
+};
+
+struct gs_command_queue {
+
+
+};
+
 struct gs_device {
 	ComPtr<IDXGIFactory6> factory;
 	ComPtr<ID3D12Device> device;

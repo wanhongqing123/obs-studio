@@ -1097,7 +1097,7 @@ struct gs_graphics_pipeline {
 
 
 struct gs_command_queue {
-	gs_device* device = nullptr;
+	ID3D12Device* device = nullptr;
 	ID3D12CommandQueue* commandQueue = nullptr;
 	D3D12_COMMAND_LIST_TYPE type;
 	ID3D12Fence* fence = nullptr;
@@ -1108,7 +1108,7 @@ struct gs_command_queue {
 	std::vector<ID3D12CommandAllocator*> allocatorPool;
 	std::queue<std::pair<uint64_t, ID3D12CommandAllocator*>> readyAllocators;
 
-	gs_command_queue(gs_device_t* device, D3D12_COMMAND_LIST_TYPE type);
+	gs_command_queue(ID3D12Device* device, D3D12_COMMAND_LIST_TYPE type);
 
 	inline ~gs_command_queue() {
 		Release();
@@ -1132,7 +1132,8 @@ struct gs_command_context {
 	gs_device* device = nullptr;
 	ID3D12GraphicsCommandList* commandList = nullptr;
 	ID3D12CommandAllocator* currentAllocator = nullptr;
-	D3D12_COMMAND_LIST_TYPE type;
+
+	gs_gpu_descriptor_heap* gpu_descriptor_heap[2] = { nullptr };
 
 	D3D12_RESOURCE_BARRIER resourceBarrierBuffer[16] = {};
 	UINT numBarriersToFlush = 0;
@@ -1141,9 +1142,10 @@ struct gs_command_context {
 		return commandList;
 	}
 
-	gs_command_context(gs_device* device, gs_command_queue* command_queue);
-	uint64_t Flush(gs_command_queue* command_queue, bool waitForCompletion = false);
-	uint64_t Finish(gs_command_queue* command_queue, bool waitForCompletion = false);
+	gs_command_context(gs_device* device);
+	void Reset();
+	uint64_t Flush(bool waitForCompletion = false);
+	uint64_t Finish(bool waitForCompletion = false);
 };
 
 struct gs_device {
@@ -1218,8 +1220,8 @@ struct gs_device {
 
 	void WaitGPUComplete();
 
-	std::vector<gs_command_context*> contextPool[4];
-	std::queue<gs_command_context*>  availableContexts[4];
+	std::vector<gs_command_context*> contextPool;
+	std::queue<gs_command_context*>  availableContexts;
 
 	gs_command_context* AllocateContext(D3D12_COMMAND_LIST_TYPE Type);
 	void FreeContext(gs_command_context* context);

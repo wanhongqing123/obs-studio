@@ -234,7 +234,7 @@ gs_swap_chain::gs_swap_chain(gs_device *device, const gs_init_data *data)
 	space = make_swap_desc(device, swapDesc, &initData, effect, flags);
 
 	ComPtr<IDXGISwapChain> swap1;
-	HRESULT hr = device->factory->CreateSwapChain(device->commandQueue, &swapDesc, swap1.Assign());
+	HRESULT hr = device->factory->CreateSwapChain(device->commandQueue->commandQueue, &swapDesc, swap1.Assign());
 	if (FAILED(hr))
 		throw HRError("Failed to create swap chain", hr);
 
@@ -434,24 +434,7 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 	if (FAILED(hr))
 		throw UnsupportedHWError("Failed to create device", hr);
 
-	D3D12_COMMAND_QUEUE_DESC queueDesc;
-	memset(&queueDesc, 0, sizeof(queueDesc));
-
-	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-
-	hr = device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue));
-	if (FAILED(hr))
-		throw UnsupportedHWError("Failed to create commandQueue", hr);
-
-	hr = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
-	if (FAILED(hr))
-		throw UnsupportedHWError("Failed to create commandAllocator", hr);
-
-	hr = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, NULL,
-				       IID_PPV_ARGS(&commandList));
-	if (FAILED(hr))
-		throw UnsupportedHWError("Failed to create commandList", hr);
+	commandQueue = new gs_command_queue(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
 
 	stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV] =
 		gs_staging_descriptor_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -462,19 +445,8 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 	stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_DSV] =
 		gs_staging_descriptor_pool_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
-	hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-	fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-	if (fenceEvent == nullptr || FAILED(hr))
-		throw HRError("Failed to create fence or fenceEvent", hr);
-
-	gpu_descriptor_heap[0] =
-		gs_gpu_descriptor_heap_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, GS_MAX_TEXTURES * GS_MAX_TEXTURES);
-	gpu_descriptor_heap[1] =
-		gs_gpu_descriptor_heap_create(device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, GS_MAX_TEXTURES);
-
 	fastClearSupported = FastClearSupported(desc.VendorId, driverVersion);
 
-	WaitGPUComplete();
 	blog(LOG_INFO, "D3D12 loaded successfully, feature level used: %x", (unsigned int)levelUsed);
 }
 
@@ -733,18 +705,17 @@ void gs_device::WaitGPUComplete()
 }
 
 gs_command_context* gs_device::AllocateContext(D3D12_COMMAND_LIST_TYPE Type) {
-	auto& AvailableContexts = availableContexts[Type];
-
 	gs_command_context* ret = nullptr;
-	if (AvailableContexts.empty())
+	if (availableContexts.empty())
 	{
-		ret = new gs_command_context(this, commandQueue);
-		contextPool[Type].emplace_back(ret);
+		ret = new gs_command_context(this);
+		contextPool.emplace_back(ret);
+		ret->Reset();
 	}
 	else
 	{
-		ret = AvailableContexts.front();
-		AvailableContexts.pop();
+		ret = availableContexts.front();
+		availableContexts.pop();
 		ret->Reset();
 	}
 
@@ -752,7 +723,7 @@ gs_command_context* gs_device::AllocateContext(D3D12_COMMAND_LIST_TYPE Type) {
 }
 
 void gs_device::FreeContext(gs_command_context* context) {
-	sm_AvailableContexts[UsedContext->m_Type].push(UsedContext);
+	availableContexts.push(context);
 }
 
 void gs_device::UpdateViewProjMatrix()

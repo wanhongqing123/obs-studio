@@ -19,17 +19,17 @@
 
 #include "d3d12-subsystem.hpp"
 
-gs_command_queue::gs_command_queue(gs_device_t *device_, D3D12_COMMAND_LIST_TYPE type_) : device(device_), type(type_)
+gs_command_queue::gs_command_queue(ID3D12Device* device_, D3D12_COMMAND_LIST_TYPE type_) : device(device_), type(type_)
 {
 
 	D3D12_COMMAND_QUEUE_DESC QueueDesc = {};
 	QueueDesc.Type = type;
 	QueueDesc.NodeMask = 0;
-	HRESULT hr = device->device->CreateCommandQueue(&QueueDesc, IID_PPV_ARGS(&commandQueue));
+	HRESULT hr = device->CreateCommandQueue(&QueueDesc, IID_PPV_ARGS(&commandQueue));
 	if (FAILED(hr))
 		throw HRError("create command queue failed", hr);
 
-	hr = device->device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+	hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
 	if (FAILED(hr))
 		throw HRError("create fence failed", hr);
 
@@ -109,48 +109,60 @@ void gs_command_queue::DiscardAllocator(uint64_t fenceValueForReset, ID3D12Comma
 	readyAllocators.push(std::make_pair(fenceValueForReset, allocator));
 }
 
-gs_command_context::gs_command_context(gs_device *device_, gs_command_queue *command_queue) : device(device_)
+gs_command_context::gs_command_context(gs_device *device_) : device(device_)
 {
-	currentAllocator = command_queue->RequestAllocator();
+	currentAllocator = device->commandQueue->RequestAllocator();
 
-	HRESULT hr = device->device->CreateCommandList(1, command_queue->type, currentAllocator, nullptr,
+	HRESULT hr = device->device->CreateCommandList(1, device->commandQueue->type, currentAllocator, nullptr,
 						       IID_PPV_ARGS(&commandList));
 	if (FAILED(hr))
 		throw HRError("create command list failed", hr);
-
-	type = command_queue->type;
+	gpu_descriptor_heap[0] =
+		gs_gpu_descriptor_heap_create(device->device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 65536);
+	gpu_descriptor_heap[1] =
+		gs_gpu_descriptor_heap_create(device->device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024);
 }
 
-uint64_t gs_command_context::Flush(gs_command_queue* command_queue, bool waitForCompletion)
+void gs_command_context::Reset()
+{
+	currentAllocator = device->commandQueue->RequestAllocator();
+	commandList->Reset(currentAllocator, nullptr);
+	ID3D12DescriptorHeap* rootDescriptorHeaps[2];
+	rootDescriptorHeaps[0] = gpu_descriptor_heap[0]->handle;
+	rootDescriptorHeaps[1] = gpu_descriptor_heap[1]->handle;
+	commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);
+}
+
+uint64_t gs_command_context::Flush(bool waitForCompletion)
 {
 	if (numBarriersToFlush > 0) {
 		commandList->ResourceBarrier(numBarriersToFlush, resourceBarrierBuffer);
 		numBarriersToFlush = 0;
 	}
 
-	uint64_t FenceValue = command_queue->ExecuteCommandList(commandList);
+	uint64_t FenceValue = device->commandQueue->ExecuteCommandList(commandList);
 
 	if (waitForCompletion)
-		command_queue->WaitForFence(FenceValue);
+		device->commandQueue->WaitForFence(FenceValue);
 
 	commandList->Reset(currentAllocator, nullptr);
 
 	return FenceValue;
 }
 
-uint64_t gs_command_context::Finish(gs_command_queue* command_queue, bool waitForCompletion)
+uint64_t gs_command_context::Finish(bool waitForCompletion)
 {
 	if (numBarriersToFlush > 0) {
 		commandList->ResourceBarrier(numBarriersToFlush, resourceBarrierBuffer);
 		numBarriersToFlush = 0;
 	}
 
-	uint64_t fenceValue = command_queue->ExecuteCommandList(commandList);
-	command_queue->DiscardAllocator(fenceValue, currentAllocator);
+	uint64_t fenceValue = device->commandQueue->ExecuteCommandList(commandList);
+	device->commandQueue->DiscardAllocator(fenceValue, currentAllocator);
 	currentAllocator = nullptr;
 
 	if (waitForCompletion)
-		command_queue->WaitForFence(fenceValue);
+		device->commandQueue->WaitForFence(fenceValue);
 
 	return fenceValue;
 }

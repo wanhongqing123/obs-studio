@@ -187,11 +187,11 @@ void gs_texture_2d::UpdateSubresources() {
 		numRows.data(), rowSizeInBytes.data(), nullptr);
 
 	if (isDynamic) {
-		device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_COPY_DEST);
+		device->currentCommandContext->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_COPY_DEST);
 		resourceState = D3D12_RESOURCE_STATE_COPY_DEST;
 
 		if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
-			device->commandList->CopyBufferRegion(texture, 0, upload_buffer->resource, placedTextureDesc[0].Offset,
+			device->currentCommandContext->CommandList()->CopyBufferRegion(texture, 0, upload_buffer->resource, placedTextureDesc[0].Offset,
 				placedTextureDesc[0].Footprint.Width);
 		}
 		else {
@@ -206,10 +206,10 @@ void gs_texture_2d::UpdateSubresources() {
 			src.pResource = upload_buffer->resource;
 			src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
 			src.PlacedFootprint = placedTextureDesc[0];
-			device->commandList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+			device->currentCommandContext->CommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
 
 		}
-		device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		device->currentCommandContext->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 		return;
 	}
@@ -233,10 +233,10 @@ void gs_texture_2d::UpdateSubresources() {
 
 	upload_buffer->resource->Unmap(0, nullptr);
 
-	device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_COPY_DEST);
+	device->currentCommandContext->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_COPY_DEST);
 	resourceState = D3D12_RESOURCE_STATE_COPY_DEST;
 	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
-		device->commandList->CopyBufferRegion(texture, 0, upload_buffer->resource, placedTextureDesc[0].Offset,
+		device->currentCommandContext->CommandList()->CopyBufferRegion(texture, 0, upload_buffer->resource, placedTextureDesc[0].Offset,
 						      placedTextureDesc[0].Footprint.Width);
 	}
 	else
@@ -253,10 +253,10 @@ void gs_texture_2d::UpdateSubresources() {
 			src.pResource = upload_buffer->resource;
 			src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
 			src.PlacedFootprint = placedTextureDesc[i];
-			device->commandList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+			device->currentCommandContext->CommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
 		}
 	}
-	device->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	device->currentCommandContext->TransitionResource(texture, resourceState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	resourceState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 }
 

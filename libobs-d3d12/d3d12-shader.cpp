@@ -271,11 +271,11 @@ void gs_shader::UploadParams()
 
 	gs_graphics_rootsignature *root_sig = &device->curPipeline.curRootSignature;
 	if (type == GS_SHADER_VERTEX && constantSize != 0)
-		device->commandList->SetGraphicsRoot32BitConstants(root_sig->vertexUniform32BitBufferRootIndex,
+		device->currentCommandContext->CommandList()->SetGraphicsRoot32BitConstants(root_sig->vertexUniform32BitBufferRootIndex,
 								   uniform32BitBufferCount, constData.data(), 0);
 
 	if (type == GS_SHADER_PIXEL && constantSize != 0)
-		device->commandList->SetGraphicsRoot32BitConstants(root_sig->pixelUniform32BitBufferRootIndex,
+		device->currentCommandContext->CommandList()->SetGraphicsRoot32BitConstants(root_sig->pixelUniform32BitBufferRootIndex,
 								   uniform32BitBufferCount, constData.data(), 0);
 }
 

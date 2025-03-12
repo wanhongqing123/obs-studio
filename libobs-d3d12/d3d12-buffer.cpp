@@ -205,9 +205,9 @@ static void BufferTransitionToDefaultUsage(ID3D12GraphicsCommandList *commandLis
 
 void gs_buffer::UploadToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset)
 {
-	BufferTransitionFromDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);
+	/*BufferTransitionFromDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);
 	device->commandList->CopyBufferRegion(dest->resource, dest_offset, source->resource, source_offset, dest->size);
-	BufferTransitionToDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);
+	BufferTransitionToDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);*/
 }
 
 void gs_buffer::UploadToBuffer(uint8_t* data, size_t size, gs_buffer* dest, uint32_t dest_offset) {
@@ -216,19 +216,19 @@ void gs_buffer::UploadToBuffer(uint8_t* data, size_t size, gs_buffer* dest, uint
 
 void gs_buffer::CpoyBufferToBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset)
 {
-	BufferTransitionFromDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);
+	/*BufferTransitionFromDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);
 	BufferTransitionFromDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_SOURCE, source);
 
 	device->commandList->CopyBufferRegion(dest->resource, dest_offset, source->resource, source_offset, dest->size);
 
 	BufferTransitionToDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_SOURCE, source);
-	BufferTransitionToDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);
+	BufferTransitionToDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_DEST, dest);*/
 }
 
 void gs_buffer::DownloadFromBuffer(gs_buffer *source, uint32_t source_offset, gs_buffer *dest, uint32_t dest_offset)
 {
-	BufferTransitionFromDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_SOURCE, source);
+	/*BufferTransitionFromDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_SOURCE, source);
 	device->commandList->CopyBufferRegion(dest->resource, dest_offset, source->resource, source_offset,
 					      source->size);
-	BufferTransitionToDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_SOURCE, source);
+	BufferTransitionToDefaultUsage(device->commandList, D3D12_RESOURCE_STATE_COPY_SOURCE, source);*/
 }

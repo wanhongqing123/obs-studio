@@ -447,6 +447,7 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 
 	fastClearSupported = FastClearSupported(desc.VendorId, driverVersion);
 
+	currentCommandContext = AllocateContext();
 	blog(LOG_INFO, "D3D12 loaded successfully, feature level used: %x", (unsigned int)levelUsed);
 }
 
@@ -481,23 +482,6 @@ void gs_device::WriteGPUDescriptor(gs_gpu_descriptor_heap *gpuHeap, D3D12_CPU_DE
 
 		gpuHeap->currentDescriptorIndex += 1;
 		gpuHeapCpuHandle.ptr += gpuHeap->descriptorSize;
-	}
-}
-
-void gs_device::TransitionResource(ID3D12Resource *resource, D3D12_RESOURCE_STATES beforeState,
-				   D3D12_RESOURCE_STATES afterState)
-{
-	D3D12_RESOURCE_BARRIER barrier;
-	memset(&barrier, 0, sizeof(barrier));
-
-	if (beforeState != afterState) {
-		barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		barrier.Transition.pResource = resource;
-		barrier.Transition.StateBefore = beforeState;
-		barrier.Transition.StateAfter = afterState;
-		barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-
-		commandList->ResourceBarrier(1, &barrier);
 	}
 }
 
@@ -639,7 +623,7 @@ void gs_device::LoadVertexBufferData()
 		numViews = curVertexShader ? curVertexShader->NumBuffersExpected() : 0;
 	}
 
-	commandList->IASetVertexBuffers(0, numViews, views);
+	currentCommandContext->CommandList()->IASetVertexBuffers(0, numViews, views);
 }
 
 void gs_device::LoadSamplerDescriptors() {
@@ -649,10 +633,10 @@ void gs_device::LoadSamplerDescriptors() {
 		cpuHandles[i] = curSamplers[i]->samplerDescriptor->cpuHandle;
 	}
 
-	WriteGPUDescriptor(gpu_descriptor_heap[1], cpuHandles, curPixelShader->samplerCount, &gpuBaseDescriptor);
+	WriteGPUDescriptor(currentCommandContext->gpu_descriptor_heap[1], cpuHandles, curPixelShader->samplerCount, &gpuBaseDescriptor);
 
 	if (curPixelShader->samplerCount > 0) {
-		commandList->SetGraphicsRootDescriptorTable(curPipeline.curRootSignature.pixelSamplerRootIndex,
+		currentCommandContext->CommandList()->SetGraphicsRootDescriptorTable(curPipeline.curRootSignature.pixelSamplerRootIndex,
 							    gpuBaseDescriptor);
 	}
 }
@@ -666,45 +650,16 @@ void gs_device::LoadTextureDescriptors() {
 	}
 
 	D3D12_GPU_DESCRIPTOR_HANDLE gpuBaseDescriptor = { 0 };
-	WriteGPUDescriptor(gpu_descriptor_heap[0], cpuHandles, curPixelShader->textureCount,
+	WriteGPUDescriptor(currentCommandContext->gpu_descriptor_heap[0], cpuHandles, curPixelShader->textureCount,
 		&gpuBaseDescriptor);
 
 	if (curPixelShader->textureCount > 0) {
-		commandList->SetGraphicsRootDescriptorTable(curPipeline.curRootSignature.pixelTextureRootIndex,
+		currentCommandContext->CommandList()->SetGraphicsRootDescriptorTable(curPipeline.curRootSignature.pixelTextureRootIndex,
 							    gpuBaseDescriptor);
 	}
 }
 
-void gs_device::WaitGPUComplete()
-{
-	/*const uint64_t curfenceValue = fenceValue;
-	commandQueue->Signal(fence, curfenceValue);
-	if (fence->GetCompletedValue() < curfenceValue) {
-		HRESULT hr = fence->SetEventOnCompletion(curfenceValue, fenceEvent);
-		if (FAILED(hr)) {
-			assert(0);
-			throw HRError("fence Completion failed", hr);
-		}
-		WaitForSingleObject(fenceEvent, INFINITE);
-	}
-	fenceValue++;
-	HRESULT hr = commandList->Close();
-	if (FAILED(hr)) {
-		assert(0);
-		return;
-	}
-	ID3D12CommandList *ppCommandLists[] = {commandList.Get()};
-	commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-	commandAllocator->Reset();
-	commandList->Reset(commandAllocator, nullptr);
-	ID3D12DescriptorHeap *rootDescriptorHeaps[2];
-	rootDescriptorHeaps[0] = gpu_descriptor_heap[0]->handle;
-	rootDescriptorHeaps[1] = gpu_descriptor_heap[1]->handle;
-	commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);*/
-}
-
-gs_command_context* gs_device::AllocateContext(D3D12_COMMAND_LIST_TYPE Type) {
+gs_command_context* gs_device::AllocateContext() {
 	gs_command_context* ret = nullptr;
 	if (availableContexts.empty())
 	{
@@ -759,9 +714,9 @@ void gs_device::FlushOutputViews()
 		if (curZStencilBuffer)
 			dsv = &curZStencilBuffer->textureDescriptor.cpuHandle;
 		if (dsv && dsv->ptr)
-			commandList->OMSetRenderTargets(1, rtv, false, dsv);
+			currentCommandContext->CommandList()->OMSetRenderTargets(1, rtv, false, dsv);
 		else
-			commandList->OMSetRenderTargets(1, rtv, false, nullptr);
+			currentCommandContext->CommandList()->OMSetRenderTargets(1, rtv, false, nullptr);
 
 		curFramebufferInvalidate = false;
 	}
@@ -1348,7 +1303,7 @@ static void device_resize_internal(gs_device_t *device, uint32_t cx, uint32_t cy
 		const gs_color_format format = get_swap_format_from_space(space, device->curSwapChain->initData.format);
 		device->curRenderTarget = NULL;
 		device->curZStencilBuffer = NULL;
-		device->commandList->OMSetRenderTargets(0, NULL, false, NULL);
+		device->currentCommandContext->CommandList()->OMSetRenderTargets(0, NULL, false, NULL);
 		device->curSwapChain->space = space;
 		device->curSwapChain->Resize(cx, cy, format);
 		device->curFramebufferInvalidate = true;
@@ -1721,8 +1676,8 @@ void device_load_vertexshader(gs_device_t *device, gs_shader_t *vertshader)
 static inline void clear_textures(gs_device_t *device)
 {
 	memset(device->curTextures, 0, sizeof(device->curTextures));
-	gs_gpu_descriptor_heap_reset(device->gpu_descriptor_heap[0]);
-	gs_gpu_descriptor_heap_reset(device->gpu_descriptor_heap[1]);
+	// gs_gpu_descriptor_heap_reset(device->gpu_descriptor_heap[0]);
+	// gs_gpu_descriptor_heap_reset(device->gpu_descriptor_heap[1]);
 }
 
 void device_load_pixelshader(gs_device_t *device, gs_shader_t *pixelshader)
@@ -2031,20 +1986,16 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 		gs_graphics_pipeline new_pipeline;
 		device->LoadGraphicsPipeline(new_pipeline);
 
-		device->commandList->SetPipelineState(new_pipeline.pipeline_state);
-		device->commandList->SetGraphicsRootSignature(new_pipeline.curRootSignature.rootSignature);
+		device->currentCommandContext->CommandList()->SetPipelineState(new_pipeline.pipeline_state);
+		device->currentCommandContext->CommandList()->SetGraphicsRootSignature(new_pipeline.curRootSignature.rootSignature);
 		device->curPipeline = new_pipeline;
-		
-		ID3D12DescriptorHeap* rootDescriptorHeaps[2];
-		rootDescriptorHeaps[0] = device->gpu_descriptor_heap[0]->handle;
-		rootDescriptorHeaps[1] = device->gpu_descriptor_heap[1]->handle;
-		device->commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);
+
 
 		float blendFactor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
-		device->commandList->OMSetBlendFactor(blendFactor);
+		device->currentCommandContext->CommandList()->OMSetBlendFactor(blendFactor);
 
-		device->commandList->OMSetStencilRef(0);
+		device->currentCommandContext->CommandList()->OMSetStencilRef(0);
 
 		device->UpdateViewProjMatrix();
 		device->curVertexShader->UploadParams();
@@ -2055,7 +2006,7 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 		device->LoadTextureDescriptors();
 
 		D3D12_PRIMITIVE_TOPOLOGY newToplogy = ConvertGSTopology(draw_mode);
-		device->commandList->IASetPrimitiveTopology(newToplogy);
+		device->currentCommandContext->CommandList()->IASetPrimitiveTopology(newToplogy);
 		device->curToplogy = newToplogy;
 	} catch (const char *error) {
 		blog(LOG_ERROR, "device_draw (D3D11): %s", error);
@@ -2070,11 +2021,11 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 	if (device->curIndexBuffer) {
 		if (num_verts == 0)
 			num_verts = (uint32_t)device->curIndexBuffer->num;
-		device->commandList->DrawIndexedInstanced(num_verts, 1, start_vert, 0, 0);
+		device->currentCommandContext->CommandList()->DrawIndexedInstanced(num_verts, 1, start_vert, 0, 0);
 	} else {
 		if (num_verts == 0)
 			num_verts = (uint32_t)device->curVertexBuffer->numVerts;
-		device->commandList->DrawInstanced(num_verts, 1, start_vert, 0);
+		device->currentCommandContext->CommandList()->DrawInstanced(num_verts, 1, start_vert, 0);
 	}
 }
 
@@ -2117,7 +2068,7 @@ void device_clear(gs_device_t *device, uint32_t clear_flags, const struct vec4 *
 			D3D12_CPU_DESCRIPTOR_HANDLE rtv = device->curFramebufferSrgb
 								  ? tex->renderTargetLinearDescriptor[side].cpuHandle
 								  : tex->renderTargetDescriptor[side].cpuHandle;
-			device->commandList->ClearRenderTargetView(rtv, color->ptr, 0, nullptr);
+			device->currentCommandContext->CommandList()->ClearRenderTargetView(rtv, color->ptr, 0, nullptr);
 		}
 	}
 
@@ -2129,7 +2080,7 @@ void device_clear(gs_device_t *device, uint32_t clear_flags, const struct vec4 *
 			flags |= D3D12_CLEAR_FLAG_STENCIL;
 
 		if (flags && device->curZStencilBuffer->textureDescriptor.cpuHandle.ptr)
-			device->commandList->ClearDepthStencilView(
+			device->currentCommandContext->CommandList()->ClearDepthStencilView(
 				device->curZStencilBuffer->textureDescriptor.cpuHandle, flags, depth, stencil, 0,
 				nullptr);
 	}
@@ -2140,25 +2091,12 @@ bool device_is_present_ready(gs_device_t* device)
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	bool ready = curSwapChain != nullptr;
 	if (ready) {
-		const uint64_t curfenceValue = device->fenceValue;
-		device->commandQueue->Signal(device->fence, curfenceValue);
-		if (device->fence->GetCompletedValue() < curfenceValue) {
-			HRESULT hr = (device->fence->SetEventOnCompletion(curfenceValue, device->fenceEvent));
-			if (FAILED(hr)) {
-				assert(0);
-				throw HRError("fence Completion failed", hr);
-			}
-			WaitForSingleObject(device->fenceEvent, INFINITE);
-		}
-		device->fenceValue++;
-		device->curSwapChain->currentBackBufferIndex = device->curSwapChain->swap->GetCurrentBackBufferIndex();
-
-		device->commandAllocator->Reset();
-		device->commandList->Reset(device->commandAllocator, device->curPipeline.pipeline_state);
-
-		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
-					   D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-
+		device->currentCommandContext->Finish();
+		device->currentCommandContext = device->AllocateContext();
+		curSwapChain->currentBackBufferIndex = curSwapChain->swap->GetCurrentBackBufferIndex();
+		device->currentCommandContext->TransitionResource(
+			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	} else {
 		blog(LOG_WARNING, "device_is_present_ready (D3D11): No active swap");
 	}
@@ -2171,24 +2109,15 @@ void device_present(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	if (curSwapChain) {
-		device->TransitionResource(curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
-					   D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-		ID3D12CommandList *ppCommandLists[] = {device->commandList.Get()};
-		HRESULT hr = device->commandList->Close();
-		if (FAILED(hr)) {
-			assert(0);
-			HRESULT hr1 = device->device->GetDeviceRemovedReason();
-			blog(LOG_WARNING, "device_present (D3D12): No active swap");
-		}
-		device->commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-		device->curFramebufferInvalidate = true;
-		hr = curSwapChain->swap->Present(1, 0);
+		device->currentCommandContext->TransitionResource(
+			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+		HRESULT hr = curSwapChain->swap->Present(1, 0);
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
 			assert(0);
 			HRESULT hr1 = device->device->GetDeviceRemovedReason();
 			blog(LOG_WARNING, "device_present (D3D12): No active swap");
 		}
-
 	} else {
 		blog(LOG_WARNING, "device_present (D3D12): No active swap");
 	}
@@ -2196,7 +2125,7 @@ void device_present(gs_device_t *device)
 
 void device_flush(gs_device_t *device)
 {
-	device->WaitGPUComplete();
+	device->currentCommandContext->Flush();
 }
 
 void device_set_cull_mode(gs_device_t *device, enum gs_cull_mode mode)
@@ -2347,7 +2276,7 @@ void device_set_viewport(gs_device_t *device, int x, int y, int width, int heigh
 	vp.Width = (float)width;
 	vp.Height = (float)height;
 
-	device->commandList->RSSetViewports(1, &vp);
+	device->currentCommandContext->CommandList()->RSSetViewports(1, &vp);
 
 	device->viewport.x = x;
 	device->viewport.y = y;
@@ -2358,7 +2287,7 @@ void device_set_viewport(gs_device_t *device, int x, int y, int width, int heigh
 	d3drect.top = y;
 	d3drect.right = width;
 	d3drect.bottom = height;
-	device->commandList->RSSetScissorRects(1, &d3drect);
+	device->currentCommandContext->CommandList()->RSSetScissorRects(1, &d3drect);
 }
 
 void device_get_viewport(const gs_device_t *device, struct gs_rect *rect)
@@ -2374,7 +2303,7 @@ void device_set_scissor_rect(gs_device_t *device, const struct gs_rect *rect)
 		d3drect.top = rect->y;
 		d3drect.right = rect->x + rect->cx;
 		d3drect.bottom = rect->y + rect->cy;
-		device->commandList->RSSetScissorRects(1, &d3drect);
+		device->currentCommandContext->CommandList()->RSSetScissorRects(1, &d3drect);
 	}
 }
 

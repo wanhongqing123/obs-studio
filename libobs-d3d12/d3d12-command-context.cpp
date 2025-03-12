@@ -71,7 +71,7 @@ void gs_command_queue::WaitForIdle()
 uint64_t gs_command_queue::ExecuteCommandList(ID3D12GraphicsCommandList *list)
 {
 	HRESULT hr = list->Close();
-	if (FAILED(hr))
+	if (!SUCCEEDED(hr))
 		throw HRError("graphics command list close failed", hr);
 
 	commandQueue->ExecuteCommandLists(1, (ID3D12CommandList **)&list);
@@ -97,7 +97,7 @@ ID3D12CommandAllocator *gs_command_queue::RequestAllocator() {
 
 	if (pAllocator == nullptr)
 	{
-		HRESULT hr = device->device->CreateCommandAllocator(type, IID_PPV_ARGS(&pAllocator));
+		HRESULT hr = device->CreateCommandAllocator(type, IID_PPV_ARGS(&pAllocator));
 		allocatorPool.push_back(pAllocator);
 	}
 
@@ -165,4 +165,28 @@ uint64_t gs_command_context::Finish(bool waitForCompletion)
 		device->commandQueue->WaitForFence(fenceValue);
 
 	return fenceValue;
+}
+
+void gs_command_context::TransitionResource(ID3D12Resource* resource, D3D12_RESOURCE_STATES beforeState,
+	D3D12_RESOURCE_STATES newState, bool flushImmediate)
+{
+	if (beforeState != newState)
+	{
+		D3D12_RESOURCE_BARRIER& BarrierDesc = resourceBarrierBuffer[numBarriersToFlush++];
+
+		BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		BarrierDesc.Transition.pResource = resource;
+		BarrierDesc.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+		BarrierDesc.Transition.StateBefore = beforeState;
+		BarrierDesc.Transition.StateAfter = newState;
+		BarrierDesc.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+
+	}
+
+	if (flushImmediate || numBarriersToFlush == 32) {
+		if (numBarriersToFlush > 0) {
+			commandList->ResourceBarrier(numBarriersToFlush, resourceBarrierBuffer);
+			numBarriersToFlush = 0;
+		}
+	}
 }

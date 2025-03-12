@@ -1135,10 +1135,10 @@ struct gs_command_context {
 
 	gs_gpu_descriptor_heap* gpu_descriptor_heap[2] = { nullptr };
 
-	D3D12_RESOURCE_BARRIER resourceBarrierBuffer[16] = {};
+	D3D12_RESOURCE_BARRIER resourceBarrierBuffer[32] = {};
 	UINT numBarriersToFlush = 0;
 
-	inline ID3D12GraphicsCommandList* CurrentCommandList() {
+	inline ID3D12GraphicsCommandList* CommandList() {
 		return commandList;
 	}
 
@@ -1146,6 +1146,8 @@ struct gs_command_context {
 	void Reset();
 	uint64_t Flush(bool waitForCompletion = false);
 	uint64_t Finish(bool waitForCompletion = false);
+	void TransitionResource(ID3D12Resource *resource, D3D12_RESOURCE_STATES beforeState,
+				D3D12_RESOURCE_STATES newState, bool flushImmediate = false);
 };
 
 struct gs_device {
@@ -1184,6 +1186,7 @@ struct gs_device {
 
 	std::vector<gs_graphics_pipeline> graphicsPipelines;
 	gs_command_queue* commandQueue;
+	gs_command_context* currentCommandContext;
 
 	gs_rect viewport;
 
@@ -1204,8 +1207,6 @@ struct gs_device {
 	void AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE heapType, gs_staging_descriptor *cpuDescripotr);
 	void WriteGPUDescriptor(gs_gpu_descriptor_heap *gpuHeap, D3D12_CPU_DESCRIPTOR_HANDLE *cpuHandle, int32_t count,
 				D3D12_GPU_DESCRIPTOR_HANDLE *gpuBaseDescriptor);
-	void TransitionResource(ID3D12Resource *resource, D3D12_RESOURCE_STATES beforeState,
-				D3D12_RESOURCE_STATES afterState);
 
 	void ConvertZStencilState(D3D12_DEPTH_STENCIL_DESC &desc, const ZStencilState &zs);
 	void ConvertRasterState(D3D12_RASTERIZER_DESC &desc, const RasterState &rs);
@@ -1218,12 +1219,10 @@ struct gs_device {
 	void LoadSamplerDescriptors();
 	void LoadTextureDescriptors();
 
-	void WaitGPUComplete();
-
 	std::vector<gs_command_context*> contextPool;
 	std::queue<gs_command_context*>  availableContexts;
 
-	gs_command_context* AllocateContext(D3D12_COMMAND_LIST_TYPE Type);
+	gs_command_context* AllocateContext();
 	void FreeContext(gs_command_context* context);
 
 	void CopyTex(ID3D12Resource *dst, uint32_t dst_x, uint32_t dst_y, gs_texture_t *src, uint32_t src_x,

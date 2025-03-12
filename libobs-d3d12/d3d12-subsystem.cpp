@@ -732,6 +732,28 @@ void gs_device::WaitGPUComplete()
 	commandList->SetDescriptorHeaps(2, rootDescriptorHeaps);*/
 }
 
+gs_command_context* gs_device::AllocateContext(D3D12_COMMAND_LIST_TYPE Type) {
+	auto& AvailableContexts = availableContexts[Type];
+
+	gs_command_context* ret = nullptr;
+	if (AvailableContexts.empty())
+	{
+		ret = new gs_command_context(this, commandQueue);
+		contextPool[Type].emplace_back(ret);
+	}
+	else
+	{
+		ret = AvailableContexts.front();
+		AvailableContexts.pop();
+		ret->Reset();
+	}
+
+	return ret;
+}
+
+void gs_device::FreeContext(gs_command_context* context) {
+	sm_AvailableContexts[UsedContext->m_Type].push(UsedContext);
+}
 
 void gs_device::UpdateViewProjMatrix()
 {

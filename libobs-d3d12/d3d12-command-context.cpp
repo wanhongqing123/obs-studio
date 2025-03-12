@@ -19,10 +19,138 @@
 
 #include "d3d12-subsystem.hpp"
 
-uint64_t gs_command_context::Flush(bool WaitForCompletion) {
+gs_command_queue::gs_command_queue(gs_device_t *device_, D3D12_COMMAND_LIST_TYPE type_) : device(device_), type(type_)
+{
 
+	D3D12_COMMAND_QUEUE_DESC QueueDesc = {};
+	QueueDesc.Type = type;
+	QueueDesc.NodeMask = 0;
+	HRESULT hr = device->device->CreateCommandQueue(&QueueDesc, IID_PPV_ARGS(&commandQueue));
+	if (FAILED(hr))
+		throw HRError("create command queue failed", hr);
+
+	hr = device->device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+	if (FAILED(hr))
+		throw HRError("create fence failed", hr);
+
+	fence->Signal(0);
+
+	fenceEventHandle = CreateEvent(nullptr, false, false, nullptr);
 }
 
-uint64_t gs_command_context::Finish(bool WaitForCompletion) {
+uint64_t gs_command_queue::IncrementFence(void)
+{
+	commandQueue->Signal(fence, nextFenceValue);
+	return nextFenceValue++;
+}
 
+bool gs_command_queue::IsFenceComplete(uint64_t fenceValue)
+{
+	if (fenceValue > lastCompletedFenceValue)
+		lastCompletedFenceValue = (lastCompletedFenceValue > fence->GetCompletedValue()
+						   ? lastCompletedFenceValue
+						   : fence->GetCompletedValue());
+
+	return fenceValue <= lastCompletedFenceValue;
+}
+
+void gs_command_queue::WaitForFence(uint64_t fenceValue) {
+	if (IsFenceComplete(fenceValue))
+		return;
+
+	fence->SetEventOnCompletion(fenceValue, fenceEventHandle);
+	WaitForSingleObject(fenceEventHandle, INFINITE);
+	lastCompletedFenceValue = fenceValue;
+}
+
+void gs_command_queue::WaitForIdle()
+{
+	WaitForFence(IncrementFence());
+}
+
+uint64_t gs_command_queue::ExecuteCommandList(ID3D12GraphicsCommandList *list)
+{
+	HRESULT hr = list->Close();
+	if (FAILED(hr))
+		throw HRError("graphics command list close failed", hr);
+
+	commandQueue->ExecuteCommandLists(1, (ID3D12CommandList **)&list);
+	commandQueue->Signal(fence, nextFenceValue);
+	return nextFenceValue++;
+}
+
+ID3D12CommandAllocator *gs_command_queue::RequestAllocator() {
+	uint64_t completedFence = fence->GetCompletedValue();
+	ID3D12CommandAllocator* pAllocator = nullptr;
+
+	if (!readyAllocators.empty()) {
+		std::pair<uint64_t, ID3D12CommandAllocator *> &allocatorPair = readyAllocators.front();
+
+		if (allocatorPair.first <= completedFence) {
+			pAllocator = allocatorPair.second;
+			HRESULT hr = pAllocator->Reset();
+			if (FAILED(hr))
+				throw HRError("allocator reset failed", hr);
+			readyAllocators.pop();
+		}
+	}
+
+	if (pAllocator == nullptr)
+	{
+		HRESULT hr = device->device->CreateCommandAllocator(type, IID_PPV_ARGS(&pAllocator));
+		allocatorPool.push_back(pAllocator);
+	}
+
+	return pAllocator;
+}
+
+void gs_command_queue::DiscardAllocator(uint64_t fenceValueForReset, ID3D12CommandAllocator *allocator)
+{
+	readyAllocators.push(std::make_pair(fenceValueForReset, allocator));
+}
+
+gs_command_context::gs_command_context(gs_device *device_, gs_command_queue *command_queue) : device(device_)
+{
+	currentAllocator = command_queue->RequestAllocator();
+
+	HRESULT hr = device->device->CreateCommandList(1, command_queue->type, currentAllocator, nullptr,
+						       IID_PPV_ARGS(&commandList));
+	if (FAILED(hr))
+		throw HRError("create command list failed", hr);
+
+	type = command_queue->type;
+}
+
+uint64_t gs_command_context::Flush(gs_command_queue* command_queue, bool waitForCompletion)
+{
+	if (numBarriersToFlush > 0) {
+		commandList->ResourceBarrier(numBarriersToFlush, resourceBarrierBuffer);
+		numBarriersToFlush = 0;
+	}
+
+	uint64_t FenceValue = command_queue->ExecuteCommandList(commandList);
+
+	if (waitForCompletion)
+		command_queue->WaitForFence(FenceValue);
+
+	commandList->Reset(currentAllocator, nullptr);
+
+	return FenceValue;
+}
+
+uint64_t gs_command_context::Finish(gs_command_queue* command_queue, bool waitForCompletion)
+{
+	if (numBarriersToFlush > 0) {
+		commandList->ResourceBarrier(numBarriersToFlush, resourceBarrierBuffer);
+		numBarriersToFlush = 0;
+	}
+
+	uint64_t fenceValue = command_queue->ExecuteCommandList(commandList);
+	command_queue->DiscardAllocator(fenceValue, currentAllocator);
+	currentAllocator = nullptr;
+
+	if (waitForCompletion)
+		command_queue->WaitForFence(fenceValue);
+
+	return fenceValue;
 }

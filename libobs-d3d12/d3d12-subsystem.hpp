@@ -22,6 +22,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <queue>
 
 #include <windows.h>
 #include <d3d12.h>
@@ -1094,47 +1095,36 @@ struct gs_graphics_pipeline {
 	}
 };
 
+
 struct gs_command_queue {
 	gs_device* device = nullptr;
 	ID3D12CommandQueue* commandQueue = nullptr;
-	D3D12_COMMAND_LIST_TYPE type = D3D12_COMMAND_LIST_TYPE::D3D12_COMMAND_LIST_TYPE_DIRECT;
+	D3D12_COMMAND_LIST_TYPE type;
 	ID3D12Fence* fence = nullptr;
 	uint64_t nextFenceValue = 0;
 	uint64_t lastCompletedFenceValue = 0;
 	HANDLE fenceEventHandle = 0;
 
-	inline gs_command_queue() {}
-	inline gs_command_queue(gs_device_t* device_, D3D12_COMMAND_LIST_TYPE type_) : device(device_), type(type_) {
+	std::vector<ID3D12CommandAllocator*> allocatorPool;
+	std::queue<std::pair<uint64_t, ID3D12CommandAllocator*>> readyAllocators;
 
-	}
+	gs_command_queue(gs_device_t* device, D3D12_COMMAND_LIST_TYPE type);
+
 	inline ~gs_command_queue() {
 		Release();
 	}
 
-	void Release();
-
+private:
+	friend class gs_command_context;
 	uint64_t IncrementFence(void);
-	bool IsFenceComplete(uint64_t FenceValue);
-	void StallForFence(uint64_t FenceValue);
-	void StallForProducer(gs_command_queue& Producer);
-	void WaitForFence(uint64_t FenceValue);
-	void WaitForIdle(void) { WaitForFence(IncrementFence()); }
+	bool IsFenceComplete(uint64_t fenceValue);
+	void WaitForFence(uint64_t fenceValue);
+	void WaitForIdle(void);
 
-	uint64_t ExecuteCommandList(ID3D12CommandList* list);
+	uint64_t ExecuteCommandList(ID3D12GraphicsCommandList* list);
 	ID3D12CommandAllocator* RequestAllocator(void);
 	void DiscardAllocator(uint64_t FenceValueForReset, ID3D12CommandAllocator* Allocator);
-};
-
-struct gs_commandlist {
-	gs_device* device = nullptr;
-	gs_command_queue* graphicsQueue;
-	gs_command_queue* computeQueue;
-	gs_command_queue* copyQueue;
-
-	inline gs_commandlist(gs_device* device) {
-		graphicsQueue = new gs_command_queue(device, D3D12_COMMAND_LIST_TYPE_DIRECT);
-		computeQueue = new gs_command_queue(device, D3D12_COMMAND_LIST_TYPE_COMPUTE);
-		copyQueue = new gs_command_queue(device, D3D12_COMMAND_LIST_TYPE_COPY);
+	inline void Release() {
 	}
 };
 
@@ -1142,33 +1132,24 @@ struct gs_command_context {
 	gs_device* device = nullptr;
 	ID3D12GraphicsCommandList* commandList = nullptr;
 	ID3D12CommandAllocator* currentAllocator = nullptr;
+	D3D12_COMMAND_LIST_TYPE type;
 
-	gs_graphics_pipeline* pipeline_state = nullptr;
-
-	D3D12_RESOURCE_BARRIER m_ResourceBarrierBuffer[16];
-	UINT numBarriersToFlush;
-
-	ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
+	D3D12_RESOURCE_BARRIER resourceBarrierBuffer[16] = {};
+	UINT numBarriersToFlush = 0;
 
 	inline ID3D12GraphicsCommandList* CurrentCommandList() {
 		return commandList;
 	}
 
-	static gs_command_context& Begin(gs_device* device);
-	uint64_t Flush(bool waitForCompletion = false);
-	uint64_t Finish(bool waitForCompletion = false);
+	gs_command_context(gs_device* device, gs_command_queue* command_queue);
+	uint64_t Flush(gs_command_queue* command_queue, bool waitForCompletion = false);
+	uint64_t Finish(gs_command_queue* command_queue, bool waitForCompletion = false);
 };
 
 struct gs_device {
 	ComPtr<IDXGIFactory6> factory;
 	ComPtr<ID3D12Device> device;
 	ComPtr<IDXGIAdapter> adapter;
-	ComPtr<ID3D12CommandQueue> commandQueue;
-	ComPtr<ID3D12CommandAllocator> commandAllocator;
-	ComPtr<ID3D12GraphicsCommandList2> commandList;
-	ComPtr<ID3D12Fence> fence;
-	uint64_t fenceValue = 0;
-	HANDLE fenceEvent = nullptr;
 
 	uint32_t adpIdx = 0;
 	bool nv12Supported = false;
@@ -1196,12 +1177,11 @@ struct gs_device {
 
 	gs_staging_descriptor_pool *stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
 
-	gs_gpu_descriptor_heap *gpu_descriptor_heap[2]; // 0 view 1 sampler
-
 	D3D12_PRIMITIVE_TOPOLOGY curToplogy;
 	gs_graphics_pipeline curPipeline;
 
 	std::vector<gs_graphics_pipeline> graphicsPipelines;
+	gs_command_queue* commandQueue;
 
 	gs_rect viewport;
 
@@ -1238,10 +1218,11 @@ struct gs_device {
 
 	void WaitGPUComplete();
 
-	//std::vector<CommandContext*> sm_ContextPool[4];
-	// std::queue<CommandContext*> sm_AvailableContexts[4];
-	//CommandContext* AllocateContext(D3D12_COMMAND_LIST_TYPE Type);
-	//void FreeContext(CommandContext*);
+	std::vector<gs_command_context*> contextPool[4];
+	std::queue<gs_command_context*>  availableContexts[4];
+
+	gs_command_context* AllocateContext(D3D12_COMMAND_LIST_TYPE Type);
+	void FreeContext(gs_command_context* context);
 
 	void CopyTex(ID3D12Resource *dst, uint32_t dst_x, uint32_t dst_y, gs_texture_t *src, uint32_t src_x,
 		     uint32_t src_y, uint32_t src_w, uint32_t src_h);

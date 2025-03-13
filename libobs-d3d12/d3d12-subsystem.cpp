@@ -627,8 +627,8 @@ void gs_device::LoadVertexBufferData()
 }
 
 void gs_device::LoadSamplerDescriptors() {
-	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandles[GS_MAX_TEXTURES];
-	D3D12_GPU_DESCRIPTOR_HANDLE gpuBaseDescriptor = { 0 };
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuHandles[GS_MAX_TEXTURES] = {0};
+	D3D12_GPU_DESCRIPTOR_HANDLE gpuBaseDescriptor = {0};
 	for (size_t i = 0; i < curPixelShader->samplerCount; ++i) {
 		cpuHandles[i] = curSamplers[i]->samplerDescriptor->cpuHandle;
 	}
@@ -1676,8 +1676,6 @@ void device_load_vertexshader(gs_device_t *device, gs_shader_t *vertshader)
 static inline void clear_textures(gs_device_t *device)
 {
 	memset(device->curTextures, 0, sizeof(device->curTextures));
-	// gs_gpu_descriptor_heap_reset(device->gpu_descriptor_heap[0]);
-	// gs_gpu_descriptor_heap_reset(device->gpu_descriptor_heap[1]);
 }
 
 void device_load_pixelshader(gs_device_t *device, gs_shader_t *pixelshader)
@@ -1961,6 +1959,13 @@ void device_begin_frame(gs_device_t *device)
 void device_begin_scene(gs_device_t *device)
 {
 	clear_textures(device);
+	device->currentCommandContext = device->AllocateContext();
+	gs_swap_chain* const curSwapChain = device->curSwapChain;
+	if (curSwapChain) {
+		device->currentCommandContext->TransitionResource(
+			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	}
 }
 
 void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t start_vert, uint32_t num_verts)
@@ -2031,8 +2036,15 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 
 void device_end_scene(gs_device_t *device)
 {
-	/* does nothing in D3D11 */
-	UNUSED_PARAMETER(device);
+	gs_swap_chain* const curSwapChain = device->curSwapChain;
+	if (curSwapChain) {
+		device->currentCommandContext->TransitionResource(
+			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+	}
+	device->currentCommandContext->Finish();
+	device->FreeContext(device->currentCommandContext);
+	device->currentCommandContext = nullptr;
 }
 
 void device_load_swapchain(gs_device_t *device, gs_swapchain_t *swapchain)
@@ -2090,17 +2102,6 @@ bool device_is_present_ready(gs_device_t* device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	bool ready = curSwapChain != nullptr;
-	if (ready) {
-		device->currentCommandContext->Finish();
-		device->currentCommandContext = device->AllocateContext();
-		curSwapChain->currentBackBufferIndex = curSwapChain->swap->GetCurrentBackBufferIndex();
-		device->currentCommandContext->TransitionResource(
-			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
-			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	} else {
-		blog(LOG_WARNING, "device_is_present_ready (D3D11): No active swap");
-	}
-
 	return ready;
 }
 
@@ -2109,9 +2110,6 @@ void device_present(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	if (curSwapChain) {
-		device->currentCommandContext->TransitionResource(
-			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
-			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 		HRESULT hr = curSwapChain->swap->Present(1, 0);
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
 			assert(0);
@@ -2125,7 +2123,7 @@ void device_present(gs_device_t *device)
 
 void device_flush(gs_device_t *device)
 {
-	device->currentCommandContext->Flush();
+	// device->currentCommandContext->Flush();
 }
 
 void device_set_cull_mode(gs_device_t *device, enum gs_cull_mode mode)

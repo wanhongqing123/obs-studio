@@ -223,6 +223,7 @@ static inline bool render_display_begin(struct obs_display *display, uint32_t cx
 static inline void render_display_end()
 {
 	gs_end_scene();
+	// gs_load_swapchain(display->swap);
 }
 
 void render_display(struct obs_display *display)

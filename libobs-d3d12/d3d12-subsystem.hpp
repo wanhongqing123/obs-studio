@@ -1115,7 +1115,7 @@ struct gs_command_queue {
 	}
 
 private:
-	friend class gs_command_context;
+	friend struct gs_command_context;
 	uint64_t IncrementFence(void);
 	bool IsFenceComplete(uint64_t fenceValue);
 	void WaitForFence(uint64_t fenceValue);

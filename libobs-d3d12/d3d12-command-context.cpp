@@ -71,7 +71,7 @@ void gs_command_queue::WaitForIdle()
 uint64_t gs_command_queue::ExecuteCommandList(ID3D12GraphicsCommandList *list)
 {
 	HRESULT hr = list->Close();
-	if (!SUCCEEDED(hr))
+	if (FAILED(hr))
 		throw HRError("graphics command list close failed", hr);
 
 	commandQueue->ExecuteCommandLists(1, (ID3D12CommandList **)&list);
@@ -118,15 +118,19 @@ gs_command_context::gs_command_context(gs_device *device_) : device(device_)
 	if (FAILED(hr))
 		throw HRError("create command list failed", hr);
 	gpu_descriptor_heap[0] =
-		gs_gpu_descriptor_heap_create(device->device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 65536);
+		gs_gpu_descriptor_heap_create(device->device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 64);
 	gpu_descriptor_heap[1] =
-		gs_gpu_descriptor_heap_create(device->device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 1024);
+		gs_gpu_descriptor_heap_create(device->device, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, 8);
 }
 
 void gs_command_context::Reset()
 {
 	currentAllocator = device->commandQueue->RequestAllocator();
 	commandList->Reset(currentAllocator, nullptr);
+
+	gs_gpu_descriptor_heap_reset(gpu_descriptor_heap[0]);
+	gs_gpu_descriptor_heap_reset(gpu_descriptor_heap[1]);
+
 	ID3D12DescriptorHeap* rootDescriptorHeaps[2];
 	rootDescriptorHeaps[0] = gpu_descriptor_heap[0]->handle;
 	rootDescriptorHeaps[1] = gpu_descriptor_heap[1]->handle;

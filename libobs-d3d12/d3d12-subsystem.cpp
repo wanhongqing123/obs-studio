@@ -447,7 +447,6 @@ void gs_device::InitDevice(uint32_t adapterIdx)
 
 	fastClearSupported = FastClearSupported(desc.VendorId, driverVersion);
 
-	currentCommandContext = AllocateContext();
 	blog(LOG_INFO, "D3D12 loaded successfully, feature level used: %x", (unsigned int)levelUsed);
 }
 
@@ -1303,7 +1302,6 @@ static void device_resize_internal(gs_device_t *device, uint32_t cx, uint32_t cy
 		const gs_color_format format = get_swap_format_from_space(space, device->curSwapChain->initData.format);
 		device->curRenderTarget = NULL;
 		device->curZStencilBuffer = NULL;
-		device->currentCommandContext->CommandList()->OMSetRenderTargets(0, NULL, false, NULL);
 		device->curSwapChain->space = space;
 		device->curSwapChain->Resize(cx, cy, format);
 		device->curFramebufferInvalidate = true;
@@ -1950,22 +1948,12 @@ void device_stage_texture(gs_device_t *device, gs_stagesurf_t *dst, gs_texture_t
 extern "C" void reset_duplicators(void);
 void device_begin_frame(gs_device_t *device)
 {
-	/* does nothing in D3D11 */
-	UNUSED_PARAMETER(device);
-
-	// reset_duplicators();
+	device->currentCommandContext = device->AllocateContext();
 }
 
 void device_begin_scene(gs_device_t *device)
 {
 	clear_textures(device);
-	device->currentCommandContext = device->AllocateContext();
-	gs_swap_chain* const curSwapChain = device->curSwapChain;
-	if (curSwapChain) {
-		device->currentCommandContext->TransitionResource(
-			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
-			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	}
 }
 
 void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t start_vert, uint32_t num_verts)
@@ -2034,18 +2022,7 @@ void device_draw(gs_device_t *device, enum gs_draw_mode draw_mode, uint32_t star
 	}
 }
 
-void device_end_scene(gs_device_t *device)
-{
-	gs_swap_chain* const curSwapChain = device->curSwapChain;
-	if (curSwapChain) {
-		device->currentCommandContext->TransitionResource(
-			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
-			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-	}
-	device->currentCommandContext->Finish();
-	device->FreeContext(device->currentCommandContext);
-	device->currentCommandContext = nullptr;
-}
+void device_end_scene(gs_device_t *device) {}
 
 void device_load_swapchain(gs_device_t *device, gs_swapchain_t *swapchain)
 {
@@ -2098,18 +2075,35 @@ void device_clear(gs_device_t *device, uint32_t clear_flags, const struct vec4 *
 	}
 }
 
-bool device_is_present_ready(gs_device_t* device)
+bool device_is_present_ready(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	bool ready = curSwapChain != nullptr;
+	if (ready) {
+		if (device->currentCommandContext) {
+			device->currentCommandContext->Finish();
+			device->FreeContext(device->currentCommandContext);
+		}
+
+		device->currentCommandContext = device->AllocateContext();
+		curSwapChain->currentBackBufferIndex = curSwapChain->swap->GetCurrentBackBufferIndex();
+		device->currentCommandContext->TransitionResource(
+			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	} else {
+		blog(LOG_WARNING, "device_is_present_ready (D3D11): No active swap");
+	}
+
 	return ready;
 }
-
 
 void device_present(gs_device_t *device)
 {
 	gs_swap_chain *const curSwapChain = device->curSwapChain;
 	if (curSwapChain) {
+		device->currentCommandContext->TransitionResource(
+			curSwapChain->target[device->curSwapChain->currentBackBufferIndex].texture,
+			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 		HRESULT hr = curSwapChain->swap->Present(1, 0);
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
 			assert(0);
@@ -2123,7 +2117,11 @@ void device_present(gs_device_t *device)
 
 void device_flush(gs_device_t *device)
 {
-	// device->currentCommandContext->Flush();
+	if (device->currentCommandContext) {
+		device->currentCommandContext->Finish();
+		device->FreeContext(device->currentCommandContext);
+		device->currentCommandContext = nullptr;
+	}
 }
 
 void device_set_cull_mode(gs_device_t *device, enum gs_cull_mode mode)

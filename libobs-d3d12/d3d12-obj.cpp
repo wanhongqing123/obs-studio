@@ -15,25 +15,22 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
-#pragma once
+#include "d3d12-obj.hpp"
+#include "d3d12-subsystem.hpp"
 
-#include "d3d12-util.hpp"
-#include "d3d12-shader.hpp"
+gs_obj::gs_obj(gs_device_t* device_, gs_type type) : device(device_), obj_type(type)
+{
+	prev_next = &device->first_obj;
+	next = device->first_obj;
+	device->first_obj = this;
+	if (next)
+		next->prev_next = &next;
+}
 
-struct ShaderParser : shader_parser {
-	inline ShaderParser() { shader_parser_init(this); }
-	inline ~ShaderParser() { shader_parser_free(this); }
-};
-
-struct ShaderProcessor {
-	gs_device_t *device;
-	ShaderParser parser;
-
-	void BuildInputLayout(std::vector<D3D12_INPUT_ELEMENT_DESC> &inputs);
-	void BuildParams(std::vector<gs_shader_param> &params);
-	void BuildSamplers(std::vector<std::unique_ptr<ShaderSampler>> &samplers);
-	void BuildString(std::string &outputString);
-	void Process(const char *shader_string, const char *file);
-
-	inline ShaderProcessor(gs_device_t *device) : device(device) {}
-};
+gs_obj::~gs_obj()
+{
+	if (prev_next)
+		*prev_next = next;
+	if (next)
+		next->prev_next = prev_next;
+}

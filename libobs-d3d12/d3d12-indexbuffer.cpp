@@ -15,6 +15,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
+#include "d3d12-buffer.hpp"
 #include "d3d12-subsystem.hpp"
 
 void gs_index_buffer::InitBuffer()

@@ -16,6 +16,7 @@
 ******************************************************************************/
 
 #include <util/base.h>
+#include "d3d12-texture.hpp"
 #include "d3d12-subsystem.hpp"
 
 void gs_texture_3d::InitSRD(std::vector<D3D12_SUBRESOURCE_DATA> &srd)

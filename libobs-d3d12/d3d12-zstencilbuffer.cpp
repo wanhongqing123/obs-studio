@@ -15,7 +15,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
+#include "d3d12-buffer.hpp"
 #include "d3d12-subsystem.hpp"
+#include "d3d12-graphics-context.hpp"
 
 void gs_zstencil_buffer::InitBuffer()
 {
@@ -60,7 +62,7 @@ void gs_zstencil_buffer::InitBuffer()
 	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
 	dsvDesc.Format = dxgiFormat;
 
-	device->device->CreateDepthStencilView(texture.Get(), &dsvDesc, textureDescriptor.cpuHandle);
+	device->device->CreateDepthStencilView(texture.Get(), &dsvDesc, textureDescriptor->cpuHandle);
 }
 
 gs_zstencil_buffer::gs_zstencil_buffer(gs_device_t *device, uint32_t width, uint32_t height, gs_zstencil_format format)
@@ -71,4 +73,20 @@ gs_zstencil_buffer::gs_zstencil_buffer(gs_device_t *device, uint32_t width, uint
 	  dxgiFormat(ConvertGSZStencilFormat(format))
 {
 	InitBuffer();
+}
+
+
+void  gs_zstencil_buffer::Clear()
+{
+	if (textureDescriptor) {
+		gs_staging_descriptor_release(textureDescriptor);
+		textureDescriptor = nullptr;
+	}
+
+	texture.Release();
+}
+
+void gs_zstencil_buffer::Release()
+{
+	Clear();
 }

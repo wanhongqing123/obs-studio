@@ -5,22 +5,28 @@ add_library(OBS::libobs-d3d12 ALIAS libobs-d3d12)
 
 target_sources(libobs-d3d12 PRIVATE
     d3dx12.h
+    d3d12-obj.hpp
+    d3d12-obj.cpp
+    d3d12-util.hpp
+    d3d12-buffer.hpp
     d3d12-indexbuffer.cpp
-    d3d12-samplerstate.cpp
+    d3d12-vertexbuffer.cpp
+    d3d12-zstencilbuffer.cpp
+    d3d12-buffer.cpp
+    d3d12-shader.hpp
     d3d12-shader.cpp
     d3d12-shaderprocessor.cpp
     d3d12-shaderprocessor.hpp
-    d3d12-stagesurf.cpp
-    d3d12-subsystem.cpp
-    d3d12-subsystem.hpp
-    d3d12-buffer.cpp
+    d3d12-texture.hpp
     d3d12-texture2d.cpp
     d3d12-texture3d.cpp
-    d3d12-vertexbuffer.cpp
-    d3d12-zstencilbuffer.cpp
-    d3d12-descriptor-heap.cpp
-    d3d12-command-context.cpp
-    d3d12-graphics-rootsignature.cpp)
+    d3d12-stagesurf.cpp
+    d3d12-graphics-context.hpp
+    d3d12-graphics-context.cpp
+    d3d12-swapchain.hpp
+    d3d12-swapchain.cpp
+    d3d12-subsystem.cpp
+    d3d12-subsystem.hpp)
 
 configure_file(cmake/windows/obs-module.rc.in libobs-d3d12.rc)
 target_sources(libobs-d3d12 PRIVATE libobs-d3d12.rc)

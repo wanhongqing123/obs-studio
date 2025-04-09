@@ -17,21 +17,10 @@
 
 #include <util/base.h>
 #include <graphics/vec3.h>
+#include "d3d12-util.hpp"
+#include "d3d12-shader.hpp"
+#include "d3d12-buffer.hpp"
 #include "d3d12-subsystem.hpp"
-
-static inline void PushBuffer(UINT *refNumBuffers, D3D12_VERTEX_BUFFER_VIEW *views, ID3D12Resource* buffer,
-			      size_t elementSize, const char *name)
-{
-	const UINT numBuffers = *refNumBuffers;
-	if (buffer) {
-		views[numBuffers].BufferLocation = buffer->GetGPUVirtualAddress();
-		views[numBuffers].StrideInBytes = elementSize;
-		views[numBuffers].SizeInBytes = buffer->GetDesc().Width;
-		*refNumBuffers = numBuffers + 1;
-	} else {
-		blog(LOG_ERROR, "This vertex shader requires a %s buffer", name);
-	}
-}
 
 void gs_vertex_buffer::FlushBuffer(ID3D12Resource *buffer, void *array, size_t elementSize)
 {

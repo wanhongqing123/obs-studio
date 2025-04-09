@@ -15,8 +15,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
-#include "d3d12-subsystem.hpp"
 #include "d3d12-shaderprocessor.hpp"
+#include "d3d12-shader.hpp"
+#include "d3d12-subsystem.hpp"
 
 #include <sstream>
 

@@ -15,7 +15,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
+#include "d3d12-buffer.hpp"
 #include "d3d12-subsystem.hpp"
+#include "d3d12-graphics-context.hpp"
 
 gs_buffer::gs_buffer(gs_device *device, int32_t size_, gs_type type, uint32_t flags)
 	: gs_obj(device, type),
@@ -81,10 +83,6 @@ gs_buffer::gs_buffer(gs_device *device, int32_t size_, gs_type type, uint32_t fl
 	if (FAILED(hr))
 		throw HRError("failed create gs buffer", hr);
 
-	uavDescriptor.heap = NULL;
-	srvDescriptor.heap = NULL;
-	cbvDescriptor.heap = NULL;
-
 	if (usageFlags & GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE) {
 		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, &uavDescriptor);
 
@@ -99,7 +97,7 @@ gs_buffer::gs_buffer(gs_device *device, int32_t size_, gs_type type, uint32_t fl
 		// Create UAV
 		device->device->CreateUnorderedAccessView(resource,
 							  NULL, // TODO: support counters?
-							  &uavDesc, uavDescriptor.cpuHandle);
+							  &uavDesc, uavDescriptor->cpuHandle);
 	}
 
 	if ((usageFlags & GS_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ) ||
@@ -115,7 +113,7 @@ gs_buffer::gs_buffer(gs_device *device, int32_t size_, gs_type type, uint32_t fl
 		srvDesc.Buffer.StructureByteStride = 0;
 
 		// Create SRV
-		device->device->CreateShaderResourceView(resource, &srvDesc, srvDescriptor.cpuHandle);
+		device->device->CreateShaderResourceView(resource, &srvDesc, srvDescriptor->cpuHandle);
 	}
 
 	// FIXME: we may not need a CBV since we use root descriptors
@@ -126,7 +124,7 @@ gs_buffer::gs_buffer(gs_device *device, int32_t size_, gs_type type, uint32_t fl
 		cbvDesc.SizeInBytes = size;
 
 		// Create CBV
-		device->device->CreateConstantBufferView(&cbvDesc, cbvDescriptor.cpuHandle);
+		device->device->CreateConstantBufferView(&cbvDesc, cbvDescriptor->cpuHandle);
 	}
 
 	gpuVirtualAddress = resource->GetGPUVirtualAddress();

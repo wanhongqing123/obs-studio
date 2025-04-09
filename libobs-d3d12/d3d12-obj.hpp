@@ -18,22 +18,15 @@
 #pragma once
 
 #include "d3d12-util.hpp"
-#include "d3d12-shader.hpp"
 
-struct ShaderParser : shader_parser {
-	inline ShaderParser() { shader_parser_init(this); }
-	inline ~ShaderParser() { shader_parser_free(this); }
-};
+struct gs_obj {
+	gs_device_t* device = nullptr;
+	gs_type obj_type = gs_type::gs_vertex_buffer;
+	gs_obj* next = nullptr;
+	gs_obj** prev_next = nullptr;
 
-struct ShaderProcessor {
-	gs_device_t *device;
-	ShaderParser parser;
+	inline gs_obj() : device(nullptr), next(nullptr), prev_next(nullptr) {}
 
-	void BuildInputLayout(std::vector<D3D12_INPUT_ELEMENT_DESC> &inputs);
-	void BuildParams(std::vector<gs_shader_param> &params);
-	void BuildSamplers(std::vector<std::unique_ptr<ShaderSampler>> &samplers);
-	void BuildString(std::string &outputString);
-	void Process(const char *shader_string, const char *file);
-
-	inline ShaderProcessor(gs_device_t *device) : device(device) {}
+	gs_obj(gs_device_t* device, gs_type type);
+	virtual ~gs_obj();
 };

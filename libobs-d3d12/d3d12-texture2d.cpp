@@ -15,9 +15,11 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ******************************************************************************/
 
+#include "d3d12-texture.hpp"
 #include <util/base.h>
-#include "d3dx12.h"
 #include "d3d12-subsystem.hpp"
+#include "d3d12-graphics-context.hpp"
+#include "d3d12-buffer.hpp"
 
 void gs_texture_2d::InitSRD(std::vector<D3D12_SUBRESOURCE_DATA> &srd)
 {
@@ -276,7 +278,7 @@ void gs_texture_2d::InitResourceView()
 		resourceViewDesc.Texture2D.MipLevels = genMipmaps || !levels ? -1 : levels;
 	}
 	device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, &textureDescriptor);
-	device->device->CreateShaderResourceView(texture, &resourceViewDesc, textureDescriptor.cpuHandle);
+	device->device->CreateShaderResourceView(texture, &resourceViewDesc, textureDescriptor->cpuHandle);
 }
 
 void gs_texture_2d::InitRenderTargets()
@@ -296,7 +298,7 @@ void gs_texture_2d::InitRenderTargets()
 		renderTargetViewDesc.Texture2D.PlaneSlice = 0;
 		device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV, &renderTargetDescriptor[0]);
 		device->device->CreateRenderTargetView(texture, &renderTargetViewDesc,
-						       renderTargetDescriptor[0].cpuHandle);
+						       renderTargetDescriptor[0]->cpuHandle);
 		if (dxgiFormatView == dxgiFormatViewLinear) {
 			renderTargetLinearDescriptor[0] = renderTargetDescriptor[0];
 		} else {
@@ -304,7 +306,7 @@ void gs_texture_2d::InitRenderTargets()
 			device->AssignStagingDescriptor(D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
 							&renderTargetLinearDescriptor[0]);
 			device->device->CreateRenderTargetView(texture, &renderTargetViewDesc,
-							       renderTargetLinearDescriptor[0].cpuHandle);
+							       renderTargetLinearDescriptor[0]->cpuHandle);
 		}
 		return;
 	}
@@ -321,7 +323,7 @@ void gs_texture_2d::InitRenderTargets()
 			renderTargetViewDesc.Texture2DArray.ArraySize = 1;
 			renderTargetViewDesc.Texture2DArray.PlaneSlice = 0;
 			device->device->CreateRenderTargetView(texture, &renderTargetViewDesc,
-							       renderTargetDescriptor[currentIndex].cpuHandle);
+							       renderTargetDescriptor[currentIndex]->cpuHandle);
 			if (dxgiFormatView == dxgiFormatViewLinear) {
 				renderTargetLinearDescriptor[currentIndex] = renderTargetDescriptor[currentIndex];
 			} else {
@@ -330,7 +332,7 @@ void gs_texture_2d::InitRenderTargets()
 								&renderTargetLinearDescriptor[currentIndex]);
 				device->device->CreateRenderTargetView(
 					texture, &renderTargetViewDesc,
-					renderTargetLinearDescriptor[currentIndex].cpuHandle);
+					renderTargetLinearDescriptor[currentIndex]->cpuHandle);
 			}
 		}
 	}
@@ -468,4 +470,33 @@ void gs_texture_2d::Unmap(int32_t subresourceIndex)
 {
 	upload_buffer->resource->Unmap(subresourceIndex, nullptr);
 	needUpdate = true;
+}
+
+void gs_texture_2d::Release()
+{
+	if (textureDescriptor != nullptr) {
+		gs_staging_descriptor_release(textureDescriptor);
+		textureDescriptor = nullptr;
+	}
+
+
+	for (int32_t i = 0; i < 6; ++i) {
+		if (renderTargetDescriptor[i] != nullptr) {
+			gs_staging_descriptor_release(renderTargetDescriptor[i]);
+			renderTargetDescriptor[i] = nullptr;
+		}
+		if (renderTargetLinearDescriptor != nullptr) {
+			gs_staging_descriptor_release(renderTargetLinearDescriptor[i]);
+			renderTargetLinearDescriptor[i] = nullptr;
+		}
+	}
+
+	memset(&textureDescriptor, 0, sizeof(textureDescriptor));
+
+	texture.Release();
+
+	if (upload_buffer) {
+		delete upload_buffer;
+		upload_buffer = nullptr;
+	}
 }

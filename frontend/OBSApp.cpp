@@ -1082,10 +1082,24 @@ void OBSApp::checkForUncleanShutdown()
 
 const char *OBSApp::GetRenderModule() const
 {
+	// D3D12 debug with PIX
+	if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0) {
+		HMODULE hModule = LoadLibrary(L"C:\\Program Files\\Microsoft PIX\\2501.30\\WinPixGpuCapturer.dll");
+		if (hModule) {
+			blog(LOG_INFO, "Load WinPixgpuCapture Success");
+		}
+	}
+	return DL_D3D12;
+	return DL_D3D11;
 #if defined(_WIN32)
 	const char *renderer = config_get_string(appConfig, "Video", "Renderer");
-
-	return (astrcmpi(renderer, "Direct3D 11") == 0) ? DL_D3D11 : DL_OPENGL;
+	if (astrcmpi(renderer, "Direct3D 12") == 0) {
+		return DL_D3D12;
+	} else if (astrcmpi(renderer, "Direct3D 11") == 0) {
+		return DL_D3D11;
+	} else {
+		return DL_OPENGL;
+	}
 #elif defined(__APPLE__) && defined(__aarch64__)
 	const char *renderer = config_get_string(appConfig, "Video", "Renderer");
 

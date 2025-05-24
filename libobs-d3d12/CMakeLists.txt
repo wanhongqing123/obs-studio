@@ -12,11 +12,10 @@ target_sources(libobs-d3d12 PRIVATE
     d3d12-indexbuffer.cpp
     d3d12-vertexbuffer.cpp
     d3d12-zstencilbuffer.cpp
-    d3d12-buffer.cpp
-    d3d12-shader.hpp
-    d3d12-shader.cpp
     d3d12-shaderprocessor.cpp
     d3d12-shaderprocessor.hpp
+    d3d12-shader.hpp
+    d3d12-shader.cpp
     d3d12-texture.hpp
     d3d12-texture2d.cpp
     d3d12-texture3d.cpp

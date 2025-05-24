@@ -20,13 +20,6 @@
 #include "d3d12-util.hpp"
 #include "d3d12-obj.hpp"
 
-#define GS_GPU_BUFFERUSAGE_VERTEX (1u << 0)                /**< Buffer is a vertex buffer. */
-#define GS_GPU_BUFFERUSAGE_INDEX (1u << 1)                 /**< Buffer is an index buffer. */
-#define GS_GPU_BUFFERUSAGE_INDIRECT (1u << 2)              /**< Buffer is an indirect buffer. */
-#define GS_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ (1u << 3) /**< Buffer supports storage reads in graphics stages. */
-#define GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ (1u << 4)  /**< Buffer supports storage reads in the compute stage. */
-#define GS_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE (1u << 5) /**< Buffer supports storage writes in the compute stage. */
-
 struct gs_vertex_shader;
 struct gs_pixel_shader;
 struct gs_staging_descriptor;
@@ -44,28 +37,6 @@ struct DataPtr {
 	inline DataPtr(void* data) : data(data) {}
 	inline ~DataPtr() { bfree(data); }
 };
-
-struct gs_buffer : gs_obj {
-	ComPtr<ID3D12Resource> resource;
-	gs_staging_descriptor* uavDescriptor = nullptr;
-	gs_staging_descriptor* srvDescriptor = nullptr;
-	gs_staging_descriptor* cbvDescriptor = nullptr;
-	D3D12_GPU_VIRTUAL_ADDRESS gpuVirtualAddress;
-
-	bool transitioned = false;
-	uint32_t usageFlags = 0;
-
-	int32_t size = 0;
-	gs_buffer(gs_device* device, int32_t size, gs_type type, uint32_t flags);
-	inline ~gs_buffer() {}
-
-	void UploadToBuffer(gs_buffer* source, uint32_t source_offset, gs_buffer* dest, uint32_t dest_offset);
-	void UploadToBuffer(uint8_t* data, size_t size, gs_buffer* dest, uint32_t dest_offset);
-
-	void CpoyBufferToBuffer(gs_buffer* source, uint32_t source_offset, gs_buffer* dest, uint32_t dest_offset);
-	void DownloadFromBuffer(gs_buffer* source, uint32_t source_offset, gs_buffer* dest, uint32_t dest_offset);
-};
-
 
 struct gs_vertex_buffer : gs_obj {
 	ComPtr<ID3D12Resource> vertexBuffer;

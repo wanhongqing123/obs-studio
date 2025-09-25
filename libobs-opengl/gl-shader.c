@@ -193,13 +193,13 @@ static bool gl_shader_init(struct gs_shader *shader, struct gl_shader_parser *gl
 	if (!gl_success("glCompileShader"))
 		return false;
 
-#if 0
-	blog(LOG_DEBUG, "+++++++++++++++++++++++++++++++++++");
-	blog(LOG_DEBUG, "  GL shader string for: %s", file);
-	blog(LOG_DEBUG, "-----------------------------------");
-	blog(LOG_DEBUG, "%s", glsp->gl_string.array);
-	blog(LOG_DEBUG, "+++++++++++++++++++++++++++++++++++");
-#endif
+//#if 0
+	blog(LOG_INFO, "+++++++++++++++++++++++++++++++++++");
+	blog(LOG_INFO, "  GL shader string for: %s", file);
+	blog(LOG_INFO, "-----------------------------------");
+	blog(LOG_INFO, "%s", glsp->gl_string.array);
+	blog(LOG_INFO, "+++++++++++++++++++++++++++++++++++");
+//#endif
 
 	glGetShaderiv(shader->obj, GL_COMPILE_STATUS, &compiled);
 	if (!gl_success("glGetShaderiv"))

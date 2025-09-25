@@ -8,6 +8,32 @@ target_sources(libobs-d3d12 PRIVATE
     d3d12-obj.hpp
     d3d12-obj.cpp
     d3d12-util.hpp
+    d3d12-color-buffer.hpp
+    d3d12-color-buffer.cpp
+    d3d12-command-allocator-pool.hpp
+    d3d12-command-allocator-pool.cpp
+    d3d12-command-context.hpp
+    d3d12-command-context.cpp
+    d3d12-commandlist-manager.hpp
+    d3d12-commandlist-manager.cpp
+    d3d12-command-signature.hpp
+    d3d12-command-signature.cpp
+    d3d12-dynamic-descriptor-heap.hpp
+    d3d12-dynamic-descriptor-heap.cpp
+    d3d12-gpu-buffer.hpp
+    d3d12-gpu-buffer.cpp
+    d3d12-gpu-resource.hpp
+    d3d12-linear-allocator.hpp
+    d3d12-linear-allocator.cpp
+    d3d12-pipeline-state.hpp
+    d3d12-pipeline-state.cpp
+    d3d12-pixel-buffer.hpp
+    d3d12-pixel-buffer.cpp
+    d3d12-readback-buffer.hpp
+    d3d12-readback-buffer.cpp
+    d3d12-root-signature.hpp
+    d3d12-root-signature.cpp
+    ###################################
     d3d12-buffer.hpp
     d3d12-indexbuffer.cpp
     d3d12-vertexbuffer.cpp

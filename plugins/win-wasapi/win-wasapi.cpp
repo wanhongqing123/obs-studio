@@ -707,7 +707,28 @@ ComPtr<IAudioClient> WASAPISource::InitClient(IMMDevice *device, SourceType type
 	DWORD flags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
 	if (type != SourceType::Input)
 		flags |= AUDCLNT_STREAMFLAGS_LOOPBACK;
+
+	if (type == SourceType::Input) {
+		flags |= AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM;
+		ComPtr<IAudioClient3> audioClient3;
+		res = client->QueryInterface(&audioClient3);
+		if (audioClient3)
+		{
+			AudioClientProperties audioClientProperty = {};
+			audioClientProperty.bIsOffload = false;
+			audioClientProperty.eCategory = AUDIO_STREAM_CATEGORY::AudioCategory_Speech;
+			// AUDIO_STREAM_CATEGORY::AudioCategory_Speech;
+			audioClientProperty.cbSize = sizeof(AudioClientProperties);
+			audioClientProperty.Options = AUDCLNT_STREAMOPTIONS_NONE;
+			res = audioClient3->SetClientProperties(&audioClientProperty);
+		}
+	}
 	res = client->Initialize(AUDCLNT_SHAREMODE_SHARED, flags, BUFFER_TIME_100NS, 0, pFormat, nullptr);
+	if (res == AUDCLNT_E_UNSUPPORTED_FORMAT)
+	{
+		blog(LOG_INFO, "format unsupport");
+
+	}
 	if (FAILED(res))
 		throw HRError("Failed to initialize audio client", res);
 

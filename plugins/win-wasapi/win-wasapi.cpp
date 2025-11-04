@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <cinttypes>
+#include <algorithm>
 
 #include <audioclientactivationparams.h>
 #include <avrt.h>
@@ -291,6 +292,13 @@ public:
 		reroute_target = obs_source_get_weak_source(target);
 	}
 
+	struct DeviceTopologyProperty {
+		ComPtr<IUnknown> controlInterface;
+		std::string name;
+		GUID subType;
+	};
+	std::vector<DeviceTopologyProperty> deviceTopologys;
+
 	template<typename F, typename... Fs> static void DeviceTopologyTraversal(IMMDevice *device, F &&f, Fs &&...fs);
 	template<typename F, typename... Fs>
 	static void DeviceTopologyTraversal(IConnector *connect, F &&f, Fs &&...fs);
@@ -516,6 +524,54 @@ void WASAPISource::UpdateSettings(UpdateParams &&params)
 	window_class = std::move(params.window_class);
 	title = std::move(params.title);
 	executable = std::move(params.executable);
+
+	// deviceTopology
+	deviceTopologys.clear();
+	IMMDevice *device = GetMMDeviceById(isDefaultDevice, device_id, sourceType == SourceType::Input);
+	DeviceTopologyTraversal(device, [this](IPart *part) {
+		GUID SubType = {};
+		part->GetSubType(&SubType);
+		LPWSTR name = nullptr;
+		part->GetName(&name);
+		DeviceTopologyProperty property;
+		size_t len = wcslen(name);
+		size_t size = os_wcs_to_utf8(name, len, nullptr, 0) + 1;
+		property.name.resize(size);
+		os_wcs_to_utf8(name, len, &property.name[0], size);
+		property.subType = SubType;
+		if (SubType == KSNODETYPE_VOLUME) {
+			IAudioVolumeLevel *audioVolumeLevel = nullptr;
+			part->Activate(CLSCTX_ALL, __uuidof(IAudioVolumeLevel), (void **)&audioVolumeLevel);
+			if (audioVolumeLevel) {
+				property.controlInterface.Set(audioVolumeLevel);
+			}
+
+			deviceTopologys.emplace_back(std::move(property));
+		} else if (SubType == KSNODETYPE_MUTE) {
+			IAudioMute *audioMute = nullptr;
+			part->Activate(CLSCTX_ALL, __uuidof(IAudioMute), (void **)&audioMute);
+			if (audioMute != nullptr) {
+				property.controlInterface.Set(audioMute);
+			}
+			deviceTopologys.emplace_back(std::move(property));
+		} else if (SubType == KSNODETYPE_AGC) {
+			IAudioAutoGainControl *audioAutoGainControl = nullptr;
+			part->Activate(CLSCTX_ALL, __uuidof(IAudioAutoGainControl), (void **)&audioAutoGainControl);
+
+			if (audioAutoGainControl != nullptr) {
+				property.controlInterface.Set(audioAutoGainControl);
+			}
+			deviceTopologys.emplace_back(std::move(property));
+		}
+
+		if (!name) {
+			CoTaskMemFree(name);
+		}
+	});
+
+	if (device) {
+		device->Release();
+	}
 }
 
 void WASAPISource::LogSettings()
@@ -550,73 +606,43 @@ void WASAPISource::Update(obs_data_t *settings)
 	std::string deviceId = params.device_id;
 	bool isDefault = params.isDefaultDevice;
 	UpdateSettings(std::move(params));
+
+	std::for_each(
+		deviceTopologys.begin(), deviceTopologys.end(),
+		[settings, restart](const DeviceTopologyProperty &property) {
+			if (property.subType == KSNODETYPE_VOLUME) {
+				IAudioVolumeLevel *audioVolumeLevel = nullptr;
+				property.controlInterface->QueryInterface(__uuidof(IAudioVolumeLevel),
+									  (void **)&audioVolumeLevel);
+				if (audioVolumeLevel && !restart) {
+					float pfLevelDB = (float)obs_data_get_double(settings, property.name.c_str());
+					audioVolumeLevel->SetLevel(0, pfLevelDB, nullptr);
+				}
+			}
+
+			if (property.subType == KSNODETYPE_MUTE) {
+				IAudioMute *audioMute = nullptr;
+				property.controlInterface->QueryInterface(__uuidof(IAudioMute), (void **)&audioMute);
+				if (audioMute && !restart) {
+					bool mute = obs_data_get_bool(settings, property.name.c_str());
+					audioMute->SetMute(mute, nullptr);
+				}
+			}
+
+			if (property.subType == KSNODETYPE_AGC) {
+				IAudioAutoGainControl *audioAutoGainControl = nullptr;
+				property.controlInterface->QueryInterface(__uuidof(IAudioAutoGainControl),
+									  (void **)&audioAutoGainControl);
+				if (audioAutoGainControl && !restart) {
+					bool enable = obs_data_get_bool(settings, property.name.c_str());
+					audioAutoGainControl->SetEnabled(enable, nullptr);
+				}
+			}
+		});
 	LogSettings();
 
 	if (restart)
 		SetEvent(restartSignal);
-
-	IMMDevice *device = GetMMDeviceById(isDefault, deviceId, sourceType == SourceType::Input);
-	WASAPISource::DeviceTopologyTraversal(device, [settings](IPart *part) {
-		GUID SubType = {};
-		part->GetSubType(&SubType);
-		LPWSTR name = nullptr;
-		part->GetName(&name);
-		if (SubType == KSNODETYPE_VOLUME) {
-			IAudioVolumeLevel *audioVolumeLevel = nullptr;
-			part->Activate(CLSCTX_ALL, __uuidof(IAudioVolumeLevel), (void **)&audioVolumeLevel);
-			if (audioVolumeLevel) {
-				float pfMinLevelDB = 0.0f;
-				float pfMaxLevelDB = 0.0f;
-				float pfStepping = 0.0f;
-				HRESULT hr =
-					audioVolumeLevel->GetLevelRange(0, &pfMinLevelDB, &pfMaxLevelDB, &pfStepping);
-				if (SUCCEEDED(hr)) {
-					size_t len = wcslen(name);
-					size_t size = os_wcs_to_utf8(name, len, nullptr, 0) + 1;
-					std::string utf8_name;
-					utf8_name.resize(size);
-					os_wcs_to_utf8(name, len, &utf8_name[0], size);
-					float pfLevelDB = (float)obs_data_get_double(settings, utf8_name.c_str());
-					audioVolumeLevel->SetLevel(0, pfLevelDB, nullptr);
-				}
-				audioVolumeLevel->Release();
-			}
-		} else if (SubType == KSNODETYPE_MUTE) {
-			IAudioMute *audioMute = nullptr;
-			part->Activate(CLSCTX_ALL, __uuidof(IAudioMute), (void **)&audioMute);
-			if (audioMute != nullptr) {
-				size_t len = wcslen(name);
-				size_t size = os_wcs_to_utf8(name, len, nullptr, 0) + 1;
-				std::string utf8_name;
-				utf8_name.resize(size);
-				os_wcs_to_utf8(name, len, &utf8_name[0], size);
-				bool mute = obs_data_get_bool(settings, utf8_name.c_str());
-				audioMute->SetMute(mute, nullptr);
-				audioMute->Release();
-			}
-		} else if (SubType == KSNODETYPE_AGC) {
-			IAudioAutoGainControl *audioAutoGainControl = nullptr;
-			part->Activate(CLSCTX_ALL, __uuidof(IAudioAutoGainControl), (void **)&audioAutoGainControl);
-
-			if (audioAutoGainControl != nullptr) {
-				size_t len = wcslen(name);
-				size_t size = os_wcs_to_utf8(name, len, nullptr, 0) + 1;
-				std::string utf8_name;
-				utf8_name.resize(size);
-				os_wcs_to_utf8(name, len, &utf8_name[0], size);
-				bool enable = obs_data_get_bool(settings, utf8_name.c_str());
-				audioAutoGainControl->SetEnabled(enable, nullptr);
-				audioAutoGainControl->Release();
-			}
-		}
-
-		if (!name) {
-			CoTaskMemFree(name);
-		}
-	});
-	if (device) {
-		device->Release();
-	}
 }
 
 void WASAPISource::OnWindowChanged(obs_data_t *settings)
@@ -1640,89 +1666,61 @@ static bool DeviceSelectionChanged(obs_properties_t *props, obs_property_t *p, o
 			obs_properties_remove_by_name(props, name.c_str());
 		}
 	}
-	IMMDevice *device = GetMMDeviceById(id == "default" ? true : false, id, true);
-	WASAPISource::DeviceTopologyTraversal(device, [props, settings](IPart *part) {
-		GUID SubType = {};
-		part->GetSubType(&SubType);
-		LPWSTR name = nullptr;
-		part->GetName(&name);
-		if (SubType == KSNODETYPE_VOLUME) {
-			IAudioVolumeLevel *audioVolumeLevel = nullptr;
-			part->Activate(CLSCTX_ALL, __uuidof(IAudioVolumeLevel), (void **)&audioVolumeLevel);
-			if (audioVolumeLevel) {
-				float pfMinLevelDB = 0.0f;
-				float pfMaxLevelDB = 0.0f;
-				float pfStepping = 0.0f;
-				HRESULT hr =
-					audioVolumeLevel->GetLevelRange(0, &pfMinLevelDB, &pfMaxLevelDB, &pfStepping);
-				if (SUCCEEDED(hr)) {
-					size_t len = wcslen(name);
-					size_t size = os_wcs_to_utf8(name, len, nullptr, 0) + 1;
-					std::string utf8_name;
-					utf8_name.resize(size);
-					os_wcs_to_utf8(name, len, &utf8_name[0], size);
-					float pfLevelDB = 0.0f;
-					audioVolumeLevel->GetLevel(0, &pfLevelDB);
-					obs_property_t *p = obs_properties_add_float_slider(props, utf8_name.c_str(),
-											    utf8_name.c_str(),
-											    pfMinLevelDB, pfMaxLevelDB,
-											    pfStepping);
-					obs_data_set_double(settings, utf8_name.c_str(), pfLevelDB);
-				}
-				audioVolumeLevel->Release();
-			}
-		} else if (SubType == KSNODETYPE_MUTE) {
-			IAudioMute *audioMute = nullptr;
-			part->Activate(CLSCTX_ALL, __uuidof(IAudioMute), (void **)&audioMute);
-			if (audioMute != nullptr) {
-				size_t len = wcslen(name);
-				size_t size = os_wcs_to_utf8(name, len, nullptr, 0) + 1;
-				std::string utf8_name;
-				utf8_name.resize(size);
-				os_wcs_to_utf8(name, len, &utf8_name[0], size);
 
-				obs_property_t *p =
-					obs_properties_add_bool(props, utf8_name.c_str(), utf8_name.c_str());
-				BOOL isMute = FALSE;
-				audioMute->GetMute(&isMute);
-				obs_data_set_bool(settings, utf8_name.c_str(), !!isMute);
+	WASAPISource *source = (WASAPISource *)obs_properties_get_param(props);
 
-				audioMute->Release();
-			}
-		} else if (SubType == KSNODETYPE_AGC) {
-			IAudioAutoGainControl *audioAutoGainControl = nullptr;
-			part->Activate(CLSCTX_ALL, __uuidof(IAudioAutoGainControl), (void **)&audioAutoGainControl);
-
-			if (audioAutoGainControl != nullptr) {
-				size_t len = wcslen(name);
-				size_t size = os_wcs_to_utf8(name, len, nullptr, 0) + 1;
-				std::string utf8_name;
-				utf8_name.resize(size);
-				os_wcs_to_utf8(name, len, &utf8_name[0], size);
-
-				obs_property_t *p =
-					obs_properties_add_bool(props, utf8_name.c_str(), utf8_name.c_str());
-				BOOL isEnabled = FALSE;
-				audioAutoGainControl->GetEnabled(&isEnabled);
-				obs_data_set_bool(settings, utf8_name.c_str(), !!isEnabled);
-				audioAutoGainControl->Release();
-			}
-		}
-
-		if (!name) {
-			CoTaskMemFree(name);
-		}
-	});
-	if (device) {
-		device->Release();
-	}
+	std::for_each(source->deviceTopologys.begin(), source->deviceTopologys.end(),
+		      [props, settings](const WASAPISource::DeviceTopologyProperty &property) {
+			      if (property.subType == KSNODETYPE_VOLUME) {
+				      IAudioVolumeLevel *audioVolumeLevel = nullptr;
+				      property.controlInterface->QueryInterface(__uuidof(IAudioVolumeLevel),
+										(void **)&audioVolumeLevel);
+				      if (audioVolumeLevel) {
+					      float pfMinLevelDB = 0.0f;
+					      float pfMaxLevelDB = 0.0f;
+					      float pfStepping = 0.0f;
+					      HRESULT hr = audioVolumeLevel->GetLevelRange(0, &pfMinLevelDB,
+											   &pfMaxLevelDB, &pfStepping);
+					      if (SUCCEEDED(hr)) {
+						      float pfLevelDB = 0.0f;
+						      audioVolumeLevel->GetLevel(0, &pfLevelDB);
+						      obs_property_t *p = obs_properties_add_float_slider(
+							      props, property.name.c_str(), property.name.c_str(),
+							      pfMinLevelDB, pfMaxLevelDB, pfStepping);
+						      obs_data_set_double(settings, property.name.c_str(), pfLevelDB);
+					      }
+				      }
+			      } else if (property.subType == KSNODETYPE_MUTE) {
+				      IAudioMute *audioMute = nullptr;
+				      property.controlInterface->QueryInterface(__uuidof(IAudioMute),
+										(void **)&audioMute);
+				      if (audioMute != nullptr) {
+					      obs_property_t *p = obs_properties_add_bool(props, property.name.c_str(),
+											  property.name.c_str());
+					      BOOL isMute = FALSE;
+					      audioMute->GetMute(&isMute);
+					      obs_data_set_bool(settings, property.name.c_str(), !!isMute);
+				      }
+			      } else if (property.subType == KSNODETYPE_AGC) {
+				      IAudioAutoGainControl *audioAutoGainControl = nullptr;
+				      property.controlInterface->QueryInterface(__uuidof(IAudioAutoGainControl),
+										(void **)&audioAutoGainControl);
+				      if (audioAutoGainControl != nullptr) {
+					      obs_property_t *p = obs_properties_add_bool(props, property.name.c_str(),
+											  property.name.c_str());
+					      BOOL isEnabled = FALSE;
+					      audioAutoGainControl->GetEnabled(&isEnabled);
+					      obs_data_set_bool(settings, property.name.c_str(), !!isEnabled);
+				      }
+			      }
+		      });
 	return true;
 }
 
 static obs_properties_t *GetWASAPIPropertiesInput(void *data)
 {
-	WASAPISource *source = (WASAPISource *)data;
 	obs_properties_t *props = obs_properties_create();
+	obs_properties_set_param(props, data, NULL);
 	vector<AudioDeviceInfo> devices;
 
 	obs_property_t *device_prop = obs_properties_add_list(props, OPT_DEVICE_ID, obs_module_text("Device"),
